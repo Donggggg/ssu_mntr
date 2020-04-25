@@ -10,6 +10,10 @@
 #define FILELEN 100
 #define MAXNUM 100
 #define BUFLEN 1024
+#define TIMEFORM 20
+#define CREATE 2
+#define DELETE 1
+#define MODIFY 0
 #define TRUE 1
 #define FALSE 0
 
@@ -25,6 +29,7 @@ typedef struct file_status{
 struct timetable{
 	time_t m_time;
 	char name[BUFLEN];
+	int content;
 };
 
 void ssu_monitoring(char *path);
@@ -33,6 +38,7 @@ int count_nodes(file_stat* head);
 file_stat* all_nodes(file_stat* head);
 file_stat* select_created_node(file_stat *new, file_stat *old);
 file_stat* select_deleted_node(file_stat *new, file_stat *old);
+void write_log(struct timetable *mod_list, int count);
 
 int main(void)
 {
@@ -47,12 +53,13 @@ int main(void)
 		fprintf(stderr, "fopen error for log.txt\n");
 		exit(1);
 	}
+	fclose(fp);
 
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN);
 	sprintf(saved_path, "%s/%s", saved_path, "check");
 	ssu_monitoring(saved_path);
-//	all_nodes(head); // 모든 노드를 출력해주는 함수
+	//	all_nodes(head); // 모든 노드를 출력해주는 함수
 	exit(0);
 
 }
@@ -60,53 +67,56 @@ int main(void)
 void ssu_monitoring(char *path)
 {
 	int old_count, new_count;
+	int i;
 	int isFirst = TRUE;
 	struct timetable mod_list[MAXNUM];
 	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-
-/*printf("now: %d-%d-%d %d:%d:%d\n",
-	            tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
-				         tm.tm_hour, tm.tm_min, tm.tm_sec); */
 
 	file_stat *old_head = malloc(sizeof(file_stat)); // 이전 헤드
 	file_stat *new_head = malloc(sizeof(file_stat)); // 새로운 헤드 
 	file_stat *tmp = malloc(sizeof(file_stat)); 
 
 	while(1){
-	new_head = make_tree(path); // 현재 상태의 트리
-	new_count = count_nodes(new_head);
+		i = 0;
+		new_head = make_tree(path); // 현재 상태의 트리
+		new_count = count_nodes(new_head);
 
-	if(isFirst == TRUE){ // 처음 실행될 경우
-		old_head = new_head;
-		old_count = count_nodes(old_head);
-		isFirst = FALSE;
-		continue;
-	}
-
-	if(old_count < new_count){ // 파일이 생성된 경우
-		if((tmp = select_created_node(new_head, old_head)) == NULL){
-			fprintf(stderr, "There is no created node\n");
-			exit(1);
+		if(isFirst == TRUE){ // 처음 실행될 경우
+			old_head = new_head;
+			old_count = count_nodes(old_head);
+			isFirst = FALSE;
+			continue;
 		}
-		printf("cr>>%s\n", tmp->name);
 
-	}
-	else if(old_count > new_count){ // 파일이 삭제된 경우
-		if((tmp = select_deleted_node(new_head, old_head)) == NULL){
-			fprintf(stderr, "There is no deleted node\n");
-			exit(1);
+		if(old_count < new_count){ // 파일이 생성된 경우
+			if((tmp = select_created_node(new_head, old_head)) == NULL){
+				fprintf(stderr, "There is no created node\n");
+				exit(1);
+			}
+			mod_list[i].m_time = tmp->statbuf.st_mtime;
+			mod_list[i].content = CREATE;
+			strcpy(mod_list[i++].name, tmp->name);
+			printf("cr>>%s\n", tmp->name);
+
 		}
-		printf("de>>%s\n", tmp->name);
+		else if(old_count > new_count){ // 파일이 삭제된 경우
+			if((tmp = select_deleted_node(new_head, old_head)) == NULL){
+				fprintf(stderr, "There is no deleted node\n");
+				exit(1);
+			}
+			mod_list[i].m_time = time(NULL);
+			mod_list[i].content = DELETE;
+			strcpy(mod_list[i++].name, tmp->name);
+			printf("de>>%s\n", tmp->name);
 
-	}
-	else{ // 파일의 개수 변화가 없는 경우
+		}
 
-	}
+		write_log(mod_list, i);
 
-	// 이번 정보를 이전 정보로 변경
-	old_head = new_head; 
-	old_count = new_count;
+		// 이번 정보를 이전 정보로 변경
+		//free(old_head); // 이후 모든 노드 free해주는거 필요
+		old_head = new_head; 
+		old_count = new_count;
 	}
 }
 
@@ -214,7 +224,7 @@ file_stat* select_created_node(file_stat *new, file_stat *old)
 		if(strcmp(new_now->name, old_now->name))
 			return new_now;
 
-	    if(new_now->next !=NULL && old_now->next == NULL)
+		if(new_now->next !=NULL && old_now->next == NULL)
 			return new_now->next;
 
 		if(new_now->down != NULL && old_now->down == NULL)
@@ -252,7 +262,7 @@ file_stat* select_deleted_node(file_stat *new, file_stat *old)
 		if(strcmp(new_now->name, old_now->name))
 			return old_now;
 
-	    if(new_now->next == NULL && old_now->next != NULL)
+		if(new_now->next == NULL && old_now->next != NULL)
 			return old_now->next;
 
 		if(new_now->down == NULL && old_now->down != NULL)
@@ -265,7 +275,7 @@ file_stat* select_deleted_node(file_stat *new, file_stat *old)
 			old_now = old_now->next;
 			if(new_now == NULL && old_now == NULL)
 				break;
-	   		else if(new_now == NULL && old_now != NULL)
+			else if(new_now == NULL && old_now != NULL)
 				return old_now;
 		}
 		else if(new_now->next != NULL && old_now->next != NULL){
@@ -276,4 +286,58 @@ file_stat* select_deleted_node(file_stat *new, file_stat *old)
 			break;
 	}
 	return NULL;
+}
+
+void write_log(struct timetable *mod_list, int count)
+{
+	int i;
+	char *tmp, filename[BUFLEN];
+	char fullname[BUFLEN+8];
+	char time_format[TIMEFORM];
+	FILE *fp;
+	struct tm tm;
+	
+	if((fp = fopen("log.txt", "r+")) < 0){
+		fprintf(stderr, "fopen error for log.txt\n");
+		exit(1);
+	}
+	fseek(fp, 0, SEEK_END);
+
+	for(i=0; i<count; i++){
+		tmp = strstr(mod_list[i].name, "check/");
+		tmp += 6;
+		strcpy(filename, tmp);
+		while((tmp =strchr(filename, '/')) != NULL)
+			*tmp = '_';
+		printf("%s\n", filename);
+
+		switch (mod_list[i].content){
+			case CREATE :
+				tm = *localtime(&mod_list[i].m_time);
+				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+				sprintf(fullname, "%s_%s", "create", filename);
+				fprintf(fp, "[%s][%s]\n", time_format, fullname);
+				break;
+			case DELETE :
+				tm = *localtime(&mod_list[i].m_time);
+				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+				sprintf(fullname, "%s_%s", "delete", filename);
+				fprintf(fp, "[%s][%s]\n", time_format, fullname);
+				break;
+			case MODIFY :
+				tm = *localtime(&mod_list[i].m_time);
+				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+				sprintf(fullname, "%s_%s", "modify", filename);
+				fprintf(fp, "[%s][%s]\n", time_format, fullname);
+				break;
+	}
+}
+	fclose(fp);
+
 }
