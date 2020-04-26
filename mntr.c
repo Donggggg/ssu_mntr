@@ -38,6 +38,8 @@ int count_nodes(file_stat* head);
 file_stat* all_nodes(file_stat* head);
 file_stat* select_created_node(file_stat *new, file_stat *old);
 file_stat* select_deleted_node(file_stat *new, file_stat *old);
+file_stat* select_modified_node(file_stat *new, file_stat *old);
+file_stat* find_node(file_stat *check, file_stat* head);
 void write_log(struct timetable *mod_list, int count);
 
 int main(void)
@@ -56,12 +58,11 @@ int main(void)
 	fclose(fp);
 
 	memset(saved_path, 0, BUFLEN);
-	getcwd(saved_path, BUFLEN);
+	getcwd(saved_path, BUFLEN); // 현재 작업 경로를 저장
 	sprintf(saved_path, "%s/%s", saved_path, "check");
-	ssu_monitoring(saved_path);
+	ssu_monitoring(saved_path); // 모니터링 시작
 	//	all_nodes(head); // 모든 노드를 출력해주는 함수
 	exit(0);
-
 }
 
 void ssu_monitoring(char *path)
@@ -79,7 +80,7 @@ void ssu_monitoring(char *path)
 	while(1){
 		i = 0;
 		new_head = make_tree(path); // 현재 상태의 트리
-		new_count = count_nodes(new_head);
+		new_count = count_nodes(new_head); // 현재 파일의 총 개수 
 
 		if(isFirst == TRUE){ // 처음 실행될 경우
 			old_head = new_head;
@@ -93,11 +94,10 @@ void ssu_monitoring(char *path)
 				fprintf(stderr, "There is no created node\n");
 				exit(1);
 			}
-			mod_list[i].m_time = tmp->statbuf.st_mtime;
-			mod_list[i].content = CREATE;
+			mod_list[i].m_time = tmp->statbuf.st_mtime; // 생성시간
+			mod_list[i].content = CREATE; 
 			strcpy(mod_list[i++].name, tmp->name);
 			printf("cr>>%s\n", tmp->name);
-
 		}
 		else if(old_count > new_count){ // 파일이 삭제된 경우
 			if((tmp = select_deleted_node(new_head, old_head)) == NULL){
@@ -108,15 +108,22 @@ void ssu_monitoring(char *path)
 			mod_list[i].content = DELETE;
 			strcpy(mod_list[i++].name, tmp->name);
 			printf("de>>%s\n", tmp->name);
+		} 
 
+		while((tmp = select_modified_node(new_head, old_head)) != NULL){
+			mod_list[i].m_time = tmp->statbuf.st_mtime;
+			mod_list[i].content = MODIFY;
+			strcpy(mod_list[i++].name, tmp->name);
+			printf("mo>>%s\n", tmp->name);
+			old_head = tmp;
 		}
 
-		write_log(mod_list, i);
+		write_log(mod_list, i); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
-		//free(old_head); // 이후 모든 노드 free해주는거 필요
+		//	free(tmp); // 이후 모든 노드 free해주는거 필요
 		old_head = new_head; 
-		old_count = new_count;
+		old_count = new_count; 
 	}
 }
 
@@ -129,6 +136,8 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 	file_stat *now = malloc(sizeof(file_stat));
 	now = head;
 	strcpy(head->name, path);
+	stat(head->name, &(head->statbuf));
+	head->m_time = head->statbuf.st_mtime;
 
 	count = scandir(head->name, &(head->namelist), NULL, alphasort); // 디렉토리에 모든 파일리스트 체크
 
@@ -144,6 +153,7 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 		strcpy(new->name, tmp); // 절대 경로로 파일이름 저장
 
 		stat(tmp, &(new->statbuf)); // 해당 파일의 stat 받아옴
+		new->m_time = new->statbuf.st_mtime;
 
 		if(S_ISDIR(new->statbuf.st_mode)){ // 디렉토리면
 			new = make_tree(tmp); // 다시 트리화
@@ -288,6 +298,72 @@ file_stat* select_deleted_node(file_stat *new, file_stat *old)
 	return NULL;
 }
 
+file_stat* select_modified_node(file_stat *new, file_stat *old)
+{
+	file_stat *old_now = malloc(sizeof(file_stat));
+	file_stat *tmp = malloc(sizeof(file_stat));
+	file_stat *mod = malloc(sizeof(file_stat));
+
+	if(S_ISDIR(old->statbuf.st_mode))
+		old_now = old->down;
+
+	while(1){
+		if((mod = find_node(old_now,new)) != NULL){
+			old_now->m_time = mod->m_time;
+			return mod;
+		}
+
+		if(S_ISDIR(old_now->statbuf.st_mode)){
+			if(old_now->down != NULL){
+				if((mod = select_modified_node(new, old_now)) != NULL)
+					return mod;
+				else if(old_now->next != NULL)
+					old_now = old_now->next;
+				else
+					break;
+			}
+			else if(old_now->next != NULL)
+				old_now = old_now->next;
+		}
+		else if(old_now->next !=NULL){
+			old_now = old_now->next;
+		}
+		else
+			break; 
+	}
+	return NULL;
+}
+
+file_stat* find_node(file_stat *check, file_stat* head)
+{
+	file_stat *now = malloc(sizeof(file_stat));
+	file_stat *tmp = malloc(sizeof(file_stat));
+	now = head->down;
+
+	while(1){
+		if(!strcmp(check->name, now->name)){
+			if(check->m_time != now->m_time)
+				return now;
+			else
+				return NULL;
+		}
+
+		if(now->down != NULL){
+			if((tmp = find_node(check, now)) !=NULL)
+				return tmp;
+			now = now->next;
+			if(now == NULL)
+				break;
+		}
+		else if(now->next != NULL){
+			now = now->next;
+		}
+		else
+			break;
+	}
+	return NULL;
+}
+
 void write_log(struct timetable *mod_list, int count)
 {
 	int i;
@@ -296,7 +372,7 @@ void write_log(struct timetable *mod_list, int count)
 	char time_format[TIMEFORM];
 	FILE *fp;
 	struct tm tm;
-	
+
 	if((fp = fopen("log.txt", "r+")) < 0){
 		fprintf(stderr, "fopen error for log.txt\n");
 		exit(1);
@@ -309,35 +385,34 @@ void write_log(struct timetable *mod_list, int count)
 		strcpy(filename, tmp);
 		while((tmp =strchr(filename, '/')) != NULL)
 			*tmp = '_';
-		printf("%s\n", filename);
 
 		switch (mod_list[i].content){
 			case CREATE :
 				tm = *localtime(&mod_list[i].m_time);
 				sprintf(time_format, "%d-%d-%d %d:%d:%d",
-				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
-	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "create", filename);
 				fprintf(fp, "[%s][%s]\n", time_format, fullname);
 				break;
 			case DELETE :
 				tm = *localtime(&mod_list[i].m_time);
 				sprintf(time_format, "%d-%d-%d %d:%d:%d",
-				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
-	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "delete", filename);
 				fprintf(fp, "[%s][%s]\n", time_format, fullname);
 				break;
 			case MODIFY :
 				tm = *localtime(&mod_list[i].m_time);
 				sprintf(time_format, "%d-%d-%d %d:%d:%d",
-				  tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
-	 			  tm.tm_hour, tm.tm_min, tm.tm_sec); 
+						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
+						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "modify", filename);
 				fprintf(fp, "[%s][%s]\n", time_format, fullname);
 				break;
+		}
 	}
-}
 	fclose(fp);
 
 }
