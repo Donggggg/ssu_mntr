@@ -35,21 +35,19 @@ struct timetable{
 };
 
 void ssu_monitoring(char *path);
-file_stat* make_tree(char *path);
 int count_nodes(file_stat* head);
-file_stat* all_nodes(file_stat* head);
-file_stat* select_created_node(file_stat *new, file_stat *old);
-file_stat* select_deleted_node(file_stat *new, file_stat *old);
-file_stat* select_modified_node(file_stat *new, file_stat *old);
-file_stat* find_node(file_stat *check, file_stat* head);
-void write_log(int count);
 
-file_stat* compare_tree(file_stat *new, file_stat *old);
+file_stat* make_tree(char *path);
+void compare_tree(file_stat *new, file_stat *old);
 int compare_node(file_stat *new, file_stat *old);
+
 void init_node_content(file_stat *node, int status);
 int set_list(file_stat *node, int count, int status);
+void write_log(int count);
+void sort_time_table(int max);
+file_stat* all_nodes(file_stat* head);
 
-	struct timetable change_list[MAXNUM];
+struct timetable change_list[MAXNUM];
 
 int main(void)
 {
@@ -69,8 +67,9 @@ int main(void)
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN); // 현재 작업 경로를 저장
 	sprintf(saved_path, "%s/%s", saved_path, "check");
+
 	ssu_monitoring(saved_path); // 모니터링 시작
-	//	all_nodes(head); // 모든 노드를 출력해주는 함수
+
 	exit(0);
 }
 
@@ -86,7 +85,6 @@ void ssu_monitoring(char *path)
 	file_stat *tmp = malloc(sizeof(file_stat)); 
 
 	while(1){
-		count = 0;
 		new_head = make_tree(path); // 현재 상태의 트리
 		new_count = count_nodes(new_head); // 현재 파일의 총 개수 
 		init_node_content(new_head->down, UNCHECKED);
@@ -99,18 +97,21 @@ void ssu_monitoring(char *path)
 		}
 
 		compare_tree(new_head->down, old_head->down);
-		count = set_list(new_head->down, count, CREATE);
+		count = set_list(new_head->down, 0, CREATE);
 		count = set_list(old_head->down, count, DELETE);
-		for(int a = 0; a < count; a++)
+		sort_time_table(count);
+
+		for(int a = 0; a < count; a++) // 개발용출력문
 			printf("%d, %s\n", change_list[a].content,change_list[a].name);
+
 		write_log(count); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
-		//	free(tmp); // 이후 모든 노드 free해주는거 필요
 		old_head = new_head; 
 		old_count = new_count; 
 		init_node_content(old_head->down, UNCHECKED);
-		sleep(3); // 딜레이 
+
+		sleep(10); // 딜레이 
 	}
 }
 
@@ -122,6 +123,7 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 	file_stat *head = malloc(sizeof(file_stat));
 	file_stat *now = malloc(sizeof(file_stat));
 	now = head;
+
 	strcpy(head->name, path);
 	stat(head->name, &(head->statbuf));
 
@@ -134,6 +136,7 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 		file_stat *new = malloc(sizeof(file_stat)); // 노드 생성
 		new->down = NULL;
 		new->next = NULL;
+
 		strcpy(new->name, head->namelist[i]->d_name); // 파일 이름
 		sprintf(tmp, "%s/%s", path, new->name); // 절대 경로
 		strcpy(new->name, tmp); // 절대 경로로 파일이름 저장
@@ -142,8 +145,6 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 
 		if(S_ISDIR(new->statbuf.st_mode)){ // 디렉토리면
 			new = make_tree(tmp); // 다시 트리화
-		}
-		else{ // 파일이면
 		}
 
 		if(isFirst == TRUE){ // 첫째면 하위로
@@ -155,8 +156,6 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 			now->next = new;
 			now = now->next;
 		}
-
-		//	free(new);
 	} 
 	return head;
 }
@@ -174,13 +173,12 @@ void init_node_content(file_stat *node, int status)
 			if(now->down != NULL)
 				init_node_content(now->down, status);
 		}
-		
+
 		if(now->next != NULL)
 			now = now->next;
 		else
 			break; 
 	} 
-
 }
 
 int count_nodes(file_stat* head)
@@ -206,7 +204,7 @@ int count_nodes(file_stat* head)
 	return count;
 }
 
-file_stat* compare_tree(file_stat *new, file_stat *old)
+void compare_tree(file_stat *new, file_stat *old)
 {
 	file_stat *now = malloc(sizeof(file_stat));
 	now = old;
@@ -219,13 +217,12 @@ file_stat* compare_tree(file_stat *new, file_stat *old)
 			if(now->down != NULL)
 				compare_tree(new, now->down);
 		}
-		
+
 		if(now->next != NULL)
 			now = now->next;
 		else
 			break;
 	}
-
 }
 
 int compare_node(file_stat *new, file_stat *old)
@@ -247,7 +244,7 @@ int compare_node(file_stat *new, file_stat *old)
 			if(now->down != NULL)
 				if(compare_node(now->down, old) < 0)
 					break;
-		
+
 		if(now->next != NULL)
 			now = now->next;
 		else
@@ -282,7 +279,7 @@ int set_list(file_stat *node, int count, int status)
 			if(now->down != NULL)
 				count = set_list(now->down, count, status);
 		}
-		
+
 		if(now->next != NULL)
 			now = now->next;
 		else
@@ -341,5 +338,19 @@ void write_log(int count)
 		}
 	}
 	fclose(fp);
+}
 
+void sort_time_table(int max)
+{
+	int i,j;
+	struct timetable tmp;
+
+	for(i = 0; i < max; i++)
+		for(j = i+1; j < max; j++){
+			if(change_list[i].m_time > change_list[j].m_time){
+				tmp = change_list[i];
+				change_list[i] = change_list[j];
+				change_list[j] = tmp;
+			}
+		}
 }
