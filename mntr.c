@@ -14,12 +14,14 @@
 #define CREATE 2
 #define DELETE 1
 #define MODIFY 0
+#define CHECKED -1
+#define UNCHECKED -2
 #define TRUE 1
 #define FALSE 0
 
 typedef struct file_status{
 	char name[BUFLEN];
-	time_t m_time;
+	int content;
 	struct dirent **namelist;
 	struct stat statbuf;
 	struct file_status *down;
@@ -40,7 +42,14 @@ file_stat* select_created_node(file_stat *new, file_stat *old);
 file_stat* select_deleted_node(file_stat *new, file_stat *old);
 file_stat* select_modified_node(file_stat *new, file_stat *old);
 file_stat* find_node(file_stat *check, file_stat* head);
-void write_log(struct timetable *mod_list, int count);
+void write_log(int count);
+
+file_stat* compare_tree(file_stat *new, file_stat *old);
+int compare_node(file_stat *new, file_stat *old);
+void init_node_content(file_stat *node, int status);
+int set_list(file_stat *node, int count, int status);
+
+	struct timetable change_list[MAXNUM];
 
 int main(void)
 {
@@ -68,9 +77,8 @@ int main(void)
 void ssu_monitoring(char *path)
 {
 	int old_count, new_count;
-	int i;
+	int count;
 	int isFirst = TRUE;
-	struct timetable mod_list[MAXNUM];
 	time_t t = time(NULL);
 
 	file_stat *old_head = malloc(sizeof(file_stat)); // 이전 헤드
@@ -78,9 +86,10 @@ void ssu_monitoring(char *path)
 	file_stat *tmp = malloc(sizeof(file_stat)); 
 
 	while(1){
-		i = 0;
+		count = 0;
 		new_head = make_tree(path); // 현재 상태의 트리
 		new_count = count_nodes(new_head); // 현재 파일의 총 개수 
+		init_node_content(new_head->down, UNCHECKED);
 
 		if(isFirst == TRUE){ // 처음 실행될 경우
 			old_head = new_head;
@@ -89,41 +98,19 @@ void ssu_monitoring(char *path)
 			continue;
 		}
 
-		if(old_count < new_count){ // 파일이 생성된 경우
-			if((tmp = select_created_node(new_head, old_head)) == NULL){
-				fprintf(stderr, "There is no created node\n");
-				exit(1);
-			}
-			mod_list[i].m_time = tmp->statbuf.st_mtime; // 생성시간
-			mod_list[i].content = CREATE; 
-			strcpy(mod_list[i++].name, tmp->name);
-			printf("cr>>%s\n", tmp->name);
-		}
-		else if(old_count > new_count){ // 파일이 삭제된 경우
-			if((tmp = select_deleted_node(new_head, old_head)) == NULL){
-				fprintf(stderr, "There is no deleted node\n");
-				exit(1);
-			}
-			mod_list[i].m_time = time(NULL);
-			mod_list[i].content = DELETE;
-			strcpy(mod_list[i++].name, tmp->name);
-			printf("de>>%s\n", tmp->name);
-		} 
-
-		while((tmp = select_modified_node(new_head, old_head)) != NULL){
-			mod_list[i].m_time = tmp->statbuf.st_mtime;
-			mod_list[i].content = MODIFY;
-			strcpy(mod_list[i++].name, tmp->name);
-			printf("mo>>%s\n", tmp->name);
-			old_head = tmp;
-		}
-
-		write_log(mod_list, i); // "log.txt"에 변경사항 입력
+		compare_tree(new_head->down, old_head->down);
+		count = set_list(new_head->down, count, CREATE);
+		count = set_list(old_head->down, count, DELETE);
+		for(int a = 0; a < count; a++)
+			printf("%d, %s\n", change_list[a].content,change_list[a].name);
+		write_log(count); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
 		//	free(tmp); // 이후 모든 노드 free해주는거 필요
 		old_head = new_head; 
 		old_count = new_count; 
+		init_node_content(old_head->down, UNCHECKED);
+		sleep(3); // 딜레이 
 	}
 }
 
@@ -137,7 +124,6 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 	now = head;
 	strcpy(head->name, path);
 	stat(head->name, &(head->statbuf));
-	head->m_time = head->statbuf.st_mtime;
 
 	count = scandir(head->name, &(head->namelist), NULL, alphasort); // 디렉토리에 모든 파일리스트 체크
 
@@ -153,7 +139,6 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 		strcpy(new->name, tmp); // 절대 경로로 파일이름 저장
 
 		stat(tmp, &(new->statbuf)); // 해당 파일의 stat 받아옴
-		new->m_time = new->statbuf.st_mtime;
 
 		if(S_ISDIR(new->statbuf.st_mode)){ // 디렉토리면
 			new = make_tree(tmp); // 다시 트리화
@@ -176,27 +161,26 @@ file_stat* make_tree(char *path) // 디렉토리를 트리화 해주는 함수
 	return head;
 }
 
-file_stat* all_nodes(file_stat* head)
+void init_node_content(file_stat *node, int status)
 {
 	file_stat *now = malloc(sizeof(file_stat));
-	now = head->down;
-	printf("%s\n", head->name);
+	now = node;
 
-	while(1){
-		printf("%s\n", now->name);
-		if(now->down != NULL){
-			now = all_nodes(now);
-			now = now->next;
-			if(now == NULL)
-				break;
+	while(1)
+	{
+		now->content = status;
+
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL)
+				init_node_content(now->down, status);
 		}
-		else if(now->next != NULL){
+		
+		if(now->next != NULL)
 			now = now->next;
-		}
 		else
-			break;
-	}
-	return head;
+			break; 
+	} 
+
 }
 
 int count_nodes(file_stat* head)
@@ -222,149 +206,92 @@ int count_nodes(file_stat* head)
 	return count;
 }
 
-file_stat* select_created_node(file_stat *new, file_stat *old)
-{
-	file_stat *new_now = malloc(sizeof(file_stat));
-	file_stat *old_now = malloc(sizeof(file_stat));
-	file_stat *tmp = malloc(sizeof(file_stat));
-	new_now = new->down;
-	old_now = old->down;
-
-	while(1){
-		if(strcmp(new_now->name, old_now->name))
-			return new_now;
-
-		if(new_now->next !=NULL && old_now->next == NULL)
-			return new_now->next;
-
-		if(new_now->down != NULL && old_now->down == NULL)
-			return new_now->down;
-
-		if(new_now->down != NULL && old_now->down != NULL){
-			if((tmp = select_created_node(new_now, old_now)) !=NULL)
-				return tmp;
-			new_now = new_now->next;
-			old_now = old_now->next;
-			if(new_now == NULL && old_now == NULL)
-				break;
-			else if(new_now !=NULL && old_now == NULL)
-				return new_now;
-		}
-		else if(new_now->next != NULL && old_now->next != NULL){
-			new_now = new_now->next;
-			old_now = old_now->next;
-		}
-		else
-			break;
-	}
-	return NULL;
-}
-
-file_stat* select_deleted_node(file_stat *new, file_stat *old)
-{
-	file_stat *new_now = malloc(sizeof(file_stat));
-	file_stat *old_now = malloc(sizeof(file_stat));
-	file_stat *tmp = malloc(sizeof(file_stat));
-	new_now = new->down;
-	old_now = old->down;
-
-	while(1){
-		if(strcmp(new_now->name, old_now->name))
-			return old_now;
-
-		if(new_now->next == NULL && old_now->next != NULL)
-			return old_now->next;
-
-		if(new_now->down == NULL && old_now->down != NULL)
-			return old_now->down;
-
-		if(new_now->down != NULL && old_now->down != NULL){
-			if((tmp = select_deleted_node(new_now, old_now)) != NULL)
-				return tmp;
-			new_now = new_now->next;
-			old_now = old_now->next;
-			if(new_now == NULL && old_now == NULL)
-				break;
-			else if(new_now == NULL && old_now != NULL)
-				return old_now;
-		}
-		else if(new_now->next != NULL && old_now->next != NULL){
-			new_now = new_now->next;
-			old_now = old_now->next;
-		}
-		else
-			break;
-	}
-	return NULL;
-}
-
-file_stat* select_modified_node(file_stat *new, file_stat *old)
-{
-	file_stat *old_now = malloc(sizeof(file_stat));
-	file_stat *tmp = malloc(sizeof(file_stat));
-	file_stat *mod = malloc(sizeof(file_stat));
-
-	if(S_ISDIR(old->statbuf.st_mode))
-		old_now = old->down;
-
-	while(1){
-		if((mod = find_node(old_now,new)) != NULL){
-			old_now->m_time = mod->m_time;
-			return mod;
-		}
-
-		if(S_ISDIR(old_now->statbuf.st_mode)){
-			if(old_now->down != NULL){
-				if((mod = select_modified_node(new, old_now)) != NULL)
-					return mod;
-				else if(old_now->next != NULL)
-					old_now = old_now->next;
-				else
-					break;
-			}
-			else if(old_now->next != NULL)
-				old_now = old_now->next;
-		}
-		else if(old_now->next !=NULL){
-			old_now = old_now->next;
-		}
-		else
-			break; 
-	}
-	return NULL;
-}
-
-file_stat* find_node(file_stat *check, file_stat* head)
+file_stat* compare_tree(file_stat *new, file_stat *old)
 {
 	file_stat *now = malloc(sizeof(file_stat));
-	file_stat *tmp = malloc(sizeof(file_stat));
-	now = head->down;
+	now = old;
 
-	while(1){
-		if(!strcmp(check->name, now->name)){
-			if(check->m_time != now->m_time)
-				return now;
-			else
-				return NULL;
-		}
+	while(1)
+	{
+		compare_node(new, now);
 
-		if(now->down != NULL){
-			if((tmp = find_node(check, now)) !=NULL)
-				return tmp;
-			now = now->next;
-			if(now == NULL)
-				break;
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL)
+				compare_tree(new, now->down);
 		}
-		else if(now->next != NULL){
+		
+		if(now->next != NULL)
 			now = now->next;
-		}
 		else
 			break;
 	}
-	return NULL;
+
 }
 
-void write_log(struct timetable *mod_list, int count)
+int compare_node(file_stat *new, file_stat *old)
+{
+	file_stat *now = malloc(sizeof(file_stat));
+	now = new;
+
+	while(1)
+	{
+		if(!strcmp(now->name, old->name)){ // 해당노드가 존재할 경우
+			now->content = CHECKED;
+			if(now->statbuf.st_mtime != old->statbuf.st_mtime) // 해당노드의 수정시간이 변경된 경우
+				now->content = MODIFY;
+			old->content = CHECKED;
+			return -1;
+		}
+
+		if(S_ISDIR(now->statbuf.st_mode))
+			if(now->down != NULL)
+				if(compare_node(now->down, old) < 0)
+					break;
+		
+		if(now->next != NULL)
+			now = now->next;
+		else
+			break;
+	}
+}
+
+int set_list(file_stat *node, int count, int status)
+{
+	file_stat *now = malloc(sizeof(file_stat));
+	now = node;
+
+	while(1)
+	{
+		switch(now->content){
+			case UNCHECKED :
+				if(status == CREATE)
+					change_list[count].m_time = now->statbuf.st_mtime;
+				else if(status = DELETE)
+					change_list[count].m_time = time(NULL);
+				strcpy(change_list[count].name, now->name);
+				change_list[count++].content = status;
+				break;
+			case MODIFY :
+				change_list[count].m_time = now->statbuf.st_mtime;
+				strcpy(change_list[count].name, now->name);
+				change_list[count++].content = MODIFY;
+				break;
+		}
+
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL)
+				count = set_list(now->down, count, status);
+		}
+		
+		if(now->next != NULL)
+			now = now->next;
+		else
+			break; 
+	} 
+	return count;
+}
+
+void write_log(int count)
 {
 	int i;
 	char *tmp, filename[BUFLEN];
@@ -380,32 +307,32 @@ void write_log(struct timetable *mod_list, int count)
 	fseek(fp, 0, SEEK_END);
 
 	for(i=0; i<count; i++){
-		tmp = strstr(mod_list[i].name, "check/");
+		tmp = strstr(change_list[i].name, "check/");
 		tmp += 6;
 		strcpy(filename, tmp);
 		while((tmp =strchr(filename, '/')) != NULL)
 			*tmp = '_';
 
-		switch (mod_list[i].content){
+		switch (change_list[i].content){
 			case CREATE :
-				tm = *localtime(&mod_list[i].m_time);
-				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				tm = *localtime(&change_list[i].m_time);
+				sprintf(time_format, "%.4d-%.2d-%.2d %.2d:%.2d:%.2d",
 						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
 						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "create", filename);
 				fprintf(fp, "[%s][%s]\n", time_format, fullname);
 				break;
 			case DELETE :
-				tm = *localtime(&mod_list[i].m_time);
-				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				tm = *localtime(&change_list[i].m_time);
+				sprintf(time_format, "%.4d-%.2d-%.2d %.2d:%.2d:%.2d",
 						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
 						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "delete", filename);
 				fprintf(fp, "[%s][%s]\n", time_format, fullname);
 				break;
 			case MODIFY :
-				tm = *localtime(&mod_list[i].m_time);
-				sprintf(time_format, "%d-%d-%d %d:%d:%d",
+				tm = *localtime(&change_list[i].m_time);
+				sprintf(time_format, "%.4d-%.2d-%.2d %.2d:%.2d:%.2d",
 						tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,
 						tm.tm_hour, tm.tm_min, tm.tm_sec); 
 				sprintf(fullname, "%s_%s", "modify", filename);
