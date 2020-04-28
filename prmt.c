@@ -9,17 +9,21 @@
 
 //#define BUFLEN 1024
 //#define MAXNUM 100
+void print_size(file_stat *node, char *path, int d_num, int print_all);
 void print_tree(file_stat *node, int level, int *length, int *check);
 void to_lower_case(char *str);
 void print_usage();
 
+file_stat size_table[BUFLEN];
+
 int main(void)
 {
-	int count, direc_length[MAXNUM];
-	int lastfile_check[MAXNUM];
-	char command_line[BUFLEN], path[BUFLEN];
+	int count, d_option; 
+	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
+	char command_line[BUFLEN], path[BUFLEN], *apath, *rpath;
 	char command_tokens[BUFLEN][MAXNUM];
 	char *command, *tmp;
+	char filename[FILELEN];
 	file_stat *head = malloc(sizeof(file_stat));
 
 	while(1)
@@ -43,7 +47,28 @@ int main(void)
 		{
 
 		}
-		else if(!strcmp(command, "size")){}
+		else if(!strcmp(command, "size"))
+		{
+			head = make_tree(path);
+			d_option = 1;
+			strcpy(filename, command_tokens[0]);
+			apath = malloc(sizeof(char) * BUFLEN);
+			getcwd(apath, BUFLEN);
+
+			if(filename[0] != '.') // 절대경로로 변경
+				sprintf(apath, "%s/%s", apath, filename);
+			else
+				realpath(filename, apath);
+			
+			if(!strcmp(command_tokens[1], "-d"))
+				if((d_option = atoi(command_tokens[2])) == 0){
+					printf("Wrong input at option NUMBER\n");
+					continue;
+				}
+
+			print_size(head, apath, d_option, FALSE);
+			free(apath);
+		}
 		else if(!strcmp(command, "recover")){}
 		else if(!strcmp(command, "tree")) // tree명령어 수행 
 		{
@@ -62,9 +87,58 @@ int main(void)
 	}
 }
 
+void print_size(file_stat *node, char *path, int d_num, int print_all)
+{
+	char cur_path[BUFLEN], *rpath;
+	int isTrue = print_all;
+	file_stat *now = malloc(sizeof(file_stat));
+	now = node;
+
+	while(d_num != 0)
+	{
+		 if(print_all == TRUE){
+				memset(cur_path, 0, BUFLEN);
+				getcwd(cur_path, BUFLEN);
+				rpath = now->name + strlen(cur_path);	
+				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+		}
+		 else if(!strcmp(now->name, path)){
+			if(d_num == 1){
+				d_num--;
+				memset(cur_path, 0, BUFLEN);
+				getcwd(cur_path, BUFLEN);
+				rpath = now->name + strlen(cur_path);	
+				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+				break;
+			}
+			else if(d_num > 1){
+				if(!S_ISDIR(now->statbuf.st_mode)){
+					printf("-d option is only for directory, not file\n");
+					break;
+				}
+				isTrue = TRUE;
+			}
+		}
+
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL){
+				if(isTrue == TRUE)
+					print_size(now->down, path, d_num-1, TRUE);
+				else if(isTrue == FALSE)
+					print_size(now->down, path, d_num, FALSE);
+			}
+		}
+
+		if(now->next != NULL)
+			now = now->next;
+		else
+			break; 
+	} 
+}
+
 void print_tree(file_stat *node, int level, int *length, int *check)
 {
-	int i, j, isFirst=TRUE, max = 6;
+	int i, j, isFirst=TRUE, max;
 	char *filename, *tmp;
 	file_stat *now = malloc(sizeof(file_stat));
 	now = node;
@@ -72,30 +146,29 @@ void print_tree(file_stat *node, int level, int *length, int *check)
 
 	while(1)
 	{
-		filename = strtok(now->name, "/");
+		filename = strtok(now->name, "/"); // 파일명만 추출
 		while((tmp = strtok(NULL, "/")) != NULL)
 			strcpy(filename, tmp);
 
 		max = 6;
-		if(isFirst == TRUE){
+		if(isFirst == TRUE){ // 디렉토리 하위파일의 처음인 경우
 			printf("|");
 			isFirst = FALSE;
 		}
 		else{
-			for(i=0; i<level; i++){
-				for(j = 0; j < length[i]; j++)
+			for(i=0; i<level; i++){ // 디렉토리의 깊이만큼
+				for(j = 0; j < length[i]; j++) // 디렉토리명의 길이만큼 공백
 					printf(" ");
-				if(i != 0)
+				if(i != 0) // 1단계이후부터 max를 7로
 					max = 7;
 				for(j = 0; j < max; j++)
 					printf(" ");
-				if(check[i] == FALSE)
+				if(check[i] == FALSE) // 디렉토리내의 파일을 이어주는 표시
 					printf("|");
-				else
+				else 
 					printf(" ");
 			}
 		}
-		//sleep(1);
 
 		if(now->next == NULL){
 			check[level-1]=TRUE;
