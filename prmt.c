@@ -18,12 +18,15 @@ file_stat size_table[BUFLEN];
 
 int main(void)
 {
+	int i,j;
 	int count, d_option; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
-	char command_line[BUFLEN], path[BUFLEN], *apath, *rpath;
+	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
+	char *dpath;
 	char command_tokens[BUFLEN][MAXNUM];
 	char *command, *tmp;
-	char filename[FILELEN];
+	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
+	struct dirent **namelist;
 	file_stat *head = malloc(sizeof(file_stat));
 
 	while(1)
@@ -40,12 +43,58 @@ int main(void)
 			strcpy(command_tokens[count++], tmp);
 
 		memset(path, 0, BUFLEN);
-		getcwd(path, BUFLEN);
-		sprintf(path, "%s/%s", path, "check");
+		memset(main_path, 0, BUFLEN);
+		getcwd(main_path, BUFLEN);
+		sprintf(path, "%s/%s", main_path, "check");
 
 		if(!strcmp(command, "delete"))
 		{
+			if(!strcmp(command_tokens[0], "")){ // FILENAME 값이 없으면 예외처리
+				printf("Input the [FILENAME] please..\n");
+				continue;
+			}
 
+			dpath = malloc(sizeof(char) * BUFLEN);
+			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
+			printf("ab path >%s\n", dpath);
+
+			tmp = strtok(command_tokens[0], "/");
+			while((tmp = strtok(NULL, "/")) != NULL)
+				strcpy(filename, tmp);
+			printf("delfile> %s\n", filename);
+
+			tmp = dpath;
+			count = 0;
+			for(tmp += strlen(dpath)-strlen(filename)-2; *tmp != '/'; tmp--)
+				count++;
+			strncpy(direcname, tmp+1, count);
+			printf("direc> %s\n", direcname);
+			memset(direc_path, 0, BUFLEN);
+			strncpy(direc_path, dpath, strlen(dpath) - strlen(filename)-1);
+
+			count = scandir(direc_path, &namelist, NULL, alphasort);
+
+			for(i = 0; i < count; i++){
+				if(!strcmp(namelist[i]->d_name, filename))
+					break;
+			}
+			if(i==count){
+				printf("file[%s] is not in directory(%s)\n", filename, direcname);
+				continue;
+			}
+
+
+			if(access("trash", F_OK) < 0) // trash폴더 생성
+				mkdir("trash", 0755);
+
+			tmp = malloc(sizeof(char) * BUFLEN);
+			strcpy(tmp, "./trash");
+			chdir(tmp); // trash디렉토리로 작업 이동
+			mkdir("files", 0755); // files폴더 생성
+			mkdir("infos", 0755); // infos폴더 생성
+			chdir(main_path); // 다시 메인디렉토리로 이동
+
+			free(tmp);
 		}
 		else if(!strcmp(command, "size"))
 		{
@@ -59,7 +108,7 @@ int main(void)
 				sprintf(apath, "%s/%s", apath, filename);
 			else
 				realpath(filename, apath);
-			
+
 			if(!strcmp(command_tokens[1], "-d"))
 				if((d_option = atoi(command_tokens[2])) == 0){
 					printf("Wrong input at option NUMBER\n");
@@ -96,13 +145,13 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 
 	while(d_num != 0)
 	{
-		 if(print_all == TRUE){
-				memset(cur_path, 0, BUFLEN);
-				getcwd(cur_path, BUFLEN);
-				rpath = now->name + strlen(cur_path);	
-				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+		if(print_all == TRUE){
+			memset(cur_path, 0, BUFLEN);
+			getcwd(cur_path, BUFLEN);
+			rpath = now->name + strlen(cur_path);	
+			printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 		}
-		 else if(!strcmp(now->name, path)){
+		else if(!strcmp(now->name, path)){
 			if(d_num == 1){
 				d_num--;
 				memset(cur_path, 0, BUFLEN);
