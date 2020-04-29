@@ -11,6 +11,8 @@
 //#define BUFLEN 1024
 //#define MAXNUM 100
 void delete_file_on_time(int sec, char *path, char *filename);
+void delete_file(char *saved_path, char *path, char *filename);
+int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur);
 void print_size(file_stat *node, char *path, int d_num, int print_all);
 void print_tree(file_stat *node, int level, int *length, int *check);
 struct tm* get_time(char * time_string);
@@ -23,7 +25,7 @@ file_stat size_table[BUFLEN];
 int main(void)
 {
 	int i,j;
-	int count, d_option; 
+	int count, command_count, d_option; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
 	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
 	char *dpath;
@@ -33,7 +35,7 @@ int main(void)
 	struct dirent **namelist;
 	struct tm *tm;
 	time_t now, reserv;	
-	int diff;
+	int diff = 0;
 	file_stat *head = malloc(sizeof(file_stat));
 
 	while(1)
@@ -42,12 +44,12 @@ int main(void)
 		fgets(command_line, BUFLEN, stdin);
 		command_line[strlen(command_line)-1] = '\0';
 
-		count = 0;
+		command_count = 0;
 		command = strtok(command_line, " ");
 		to_lower_case(command);
 
 		while((tmp = strtok(NULL, " ")) != NULL)
-			strcpy(command_tokens[count++], tmp);
+			strcpy(command_tokens[command_count++], tmp);
 
 		memset(path, 0, BUFLEN);
 		memset(main_path, 0, BUFLEN);
@@ -100,18 +102,22 @@ int main(void)
 			mkdir("infos", 0755); // infos폴더 생성
 			chdir(main_path); // 다시 메인디렉토리로 이동
 
-			sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
-			tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
+			if(command_tokens[1][0] == '-' || command_tokens[1] == NULL){ // ENDTIME이 주어졌으면
+				sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
+				tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
 
-			if(tm->tm_sec < 0){ // 입력 오류 예외 처리
-				printf("input wrong time form\n");
-				continue;
+				if(tm->tm_sec < 0){ // 입력 오류 예외 처리
+					printf("input wrong time form\n");
+					continue;
+				}
+
+				now = time(NULL); // 현재시간
+				reserv = mktime(tm); // 삭제가 예약된 시간
+				diff = difftime(reserv, now); // 두 시간의 차 구함
 			}
-
-			now = time(NULL); // 현재시간
-			reserv = mktime(tm); // 삭제가 예약된 시간
-			diff = difftime(reserv, now); // 두 시간의 차 구함
 			printf("wait time : %d\n", diff);
+
+			delete_file_on_time(diff, dpath, filename);
 
 			free(tmp);
 		}
@@ -166,7 +172,7 @@ struct tm * get_time(char * time_string)
 		if(time_string[i] <='9' && time_string[i] >= '0')
 			str[pos++] = time_string[i];
 		else if(time_string[i] == '-' || time_string[i] == ' ' || time_string[i] == ':'){
-			if(level == 0) // 년도
+			if(level == 0) // 년
 				tm->tm_year = atoi(str) - 1900;
 			else if(level == 1) // 월
 				tm->tm_mon = atoi(str) - 1;
@@ -188,7 +194,97 @@ struct tm * get_time(char * time_string)
 
 void delete_file_on_time(int sec, char *path, char *filename)
 {
+	char saved_path[BUFLEN];
+	pid_t pid;
 
+	memset(saved_path, 0, BUFLEN);
+	getcwd(saved_path, BUFLEN);
+
+	if((pid = fork()) < 0){ // fork 밑 에러처리
+		fprintf(stderr, "fork error\n");
+		exit(1);
+	}
+	else if(pid == 0){ // 자식프로세스 (일정 시간 이후에 파일을 지워 줌)
+		sleep(sec);
+		delete_file(saved_path, path, filename);
+	}
+}
+
+void delete_file(char *saved_path, char *path, char *filename)
+{
+	int i, count;
+	char *only_name = malloc(sizeof(char) * FILELEN);
+	char files_path[BUFLEN], infos_path[BUFLEN];
+	char tmp[BUFLEN], title[13] = "[Trash info]\n";
+	FILE *fp;
+	time_t t;
+	struct stat statbuf;
+	struct tm tm;
+	struct dirent **namelist;
+
+	strcpy(only_name, filename);
+	sprintf(files_path, "%s/%s", saved_path, "trash/files");
+	sprintf(infos_path, "%s/%s", saved_path, "trash/infos");
+
+	count = scandir(files_path, &namelist, NULL, alphasort);
+
+	make_unoverlap_name(namelist, count, only_name, 0);
+
+	sprintf(tmp, "%s/%s", files_path, only_name);
+
+	stat(path, &statbuf);
+	rename(path, tmp);
+	t = time(NULL);
+	tm = *localtime(&t);
+
+	sprintf(tmp, "%s/%s", infos_path, only_name);
+	chdir(infos_path);
+
+	if((fp = fopen(only_name, "w+"))< 0){
+		fprintf(stderr, "fopen error for %s\n", only_name);
+		exit(1);
+	}
+
+	fwrite(title, strlen(title), 1, fp);
+	fwrite(path, strlen(path), 1, fp);
+	memset(tmp, 0, BUFLEN); 
+	sprintf(tmp, "\nD : %.4d-%.2d-%.2d %.2d:%.2d:%.2d\n",
+					tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
+					tm.tm_hour, tm.tm_min, tm.tm_sec); 
+	fwrite(tmp, strlen(tmp), 1, fp);
+	tm = *localtime(&(statbuf.st_mtime));
+	memset(tmp, 0, BUFLEN); 
+	sprintf(tmp, "M : %.4d-%.2d-%.2d %.2d:%.2d:%.2d\n",
+					tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
+					tm.tm_hour, tm.tm_min, tm.tm_sec); 
+	fwrite(tmp, strlen(tmp), 1, fp);
+
+	fclose(fp);
+	chdir(saved_path);
+
+}
+
+int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur)
+{
+	int i;
+	char tmp[FILELEN];
+
+	if(cur == 1){
+		sprintf(tmp, "%d_%s", cur, filename);
+		memcpy(filename, tmp, strlen(tmp));
+		filename[strlen(filename)-1] = '\0';
+	}
+	else if(cur > 1)
+		filename[0] = cur + 48;
+
+	for(i = 0; i < count; i++)
+		if(!strcmp(filename, namelist[i]->d_name))
+			break;
+
+	if(i == count)// 바꿀 이름을 찾은 경우 
+		return -1;
+	else  // 못 찾으면 재귀로 찾음 
+		return make_unoverlap_name(namelist, count, filename, cur+1); 
 }
 
 void print_size(file_stat *node, char *path, int d_num, int print_all)
