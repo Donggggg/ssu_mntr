@@ -3,14 +3,18 @@
 #include <unistd.h>
 #include <string.h>
 #include <dirent.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "mntr.h"
 
 //#define BUFLEN 1024
 //#define MAXNUM 100
+void delete_file_on_time(int sec, char *path, char *filename);
 void print_size(file_stat *node, char *path, int d_num, int print_all);
 void print_tree(file_stat *node, int level, int *length, int *check);
+struct tm* get_time(char * time_string);
+int get_time_diffrence(struct tm tm);
 void to_lower_case(char *str);
 void print_usage();
 
@@ -23,10 +27,13 @@ int main(void)
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
 	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
 	char *dpath;
-	char command_tokens[BUFLEN][MAXNUM];
+	char command_tokens[BUFLEN][MAXNUM], time_table[4][5];
 	char *command, *tmp;
 	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
 	struct dirent **namelist;
+	struct tm *tm;
+	time_t now, reserv;	
+	int diff;
 	file_stat *head = malloc(sizeof(file_stat));
 
 	while(1)
@@ -58,7 +65,8 @@ int main(void)
 			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
 			printf("ab path >%s\n", dpath);
 
-			tmp = strtok(command_tokens[0], "/");
+			strcpy(filename, command_tokens[0]);
+			tmp = strtok(command_tokens[0], "/"); // 삭제할 파일명 추출
 			while((tmp = strtok(NULL, "/")) != NULL)
 				strcpy(filename, tmp);
 			printf("delfile> %s\n", filename);
@@ -67,22 +75,20 @@ int main(void)
 			count = 0;
 			for(tmp += strlen(dpath)-strlen(filename)-2; *tmp != '/'; tmp--)
 				count++;
-			strncpy(direcname, tmp+1, count);
+			strncpy(direcname, tmp+1, count); // 삭제할 파일의 디렉토리명 추출
 			printf("direc> %s\n", direcname);
 			memset(direc_path, 0, BUFLEN);
-			strncpy(direc_path, dpath, strlen(dpath) - strlen(filename)-1);
+			strncpy(direc_path, dpath, strlen(dpath) - strlen(filename)-1); // 삭제할 파일의 디렉토리의 절대경로
 
 			count = scandir(direc_path, &namelist, NULL, alphasort);
-
-			for(i = 0; i < count; i++){
+			for(i = 0; i < count; i++){ // 삭제할 파일이 해당 디렉토리에 있는지 검사
 				if(!strcmp(namelist[i]->d_name, filename))
 					break;
 			}
-			if(i==count){
-				printf("file[%s] is not in directory(%s)\n", filename, direcname);
+			if(i==count){ // 없으면 예외처리
+				printf("file(%s) is not in directory(%s)\n", filename, direcname);
 				continue;
 			}
-
 
 			if(access("trash", F_OK) < 0) // trash폴더 생성
 				mkdir("trash", 0755);
@@ -93,6 +99,19 @@ int main(void)
 			mkdir("files", 0755); // files폴더 생성
 			mkdir("infos", 0755); // infos폴더 생성
 			chdir(main_path); // 다시 메인디렉토리로 이동
+
+			sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
+			tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
+
+			if(tm->tm_sec < 0){ // 입력 오류 예외 처리
+				printf("input wrong time form\n");
+				continue;
+			}
+
+			now = time(NULL); // 현재시간
+			reserv = mktime(tm); // 삭제가 예약된 시간
+			diff = difftime(reserv, now); // 두 시간의 차 구함
+			printf("wait time : %d\n", diff);
 
 			free(tmp);
 		}
@@ -134,6 +153,42 @@ int main(void)
 			print_usage();
 		}
 	}
+}
+
+struct tm * get_time(char * time_string)
+{
+	int i, pos = 0, level = 0;
+	char str[4];
+	struct tm *tm = malloc(sizeof(struct tm));
+	tm->tm_sec = 0;
+
+	for(i = 0; i < strlen(time_string); i++){
+		if(time_string[i] <='9' && time_string[i] >= '0')
+			str[pos++] = time_string[i];
+		else if(time_string[i] == '-' || time_string[i] == ' ' || time_string[i] == ':'){
+			if(level == 0) // 년도
+				tm->tm_year = atoi(str) - 1900;
+			else if(level == 1) // 월
+				tm->tm_mon = atoi(str) - 1;
+			else if(level == 2) // 일
+				tm->tm_mday = atoi(str);
+			else if(level == 3) // 시
+				tm->tm_hour = atoi(str);
+			else if(level == 4) // 분
+				tm->tm_min = atoi(str);
+			pos = 0;
+			str[2] = '\0';
+			level++;
+		}
+		else
+			tm->tm_sec = -1; // 예외처리
+	}
+	return tm;
+}
+
+void delete_file_on_time(int sec, char *path, char *filename)
+{
+
 }
 
 void print_size(file_stat *node, char *path, int d_num, int print_all)
