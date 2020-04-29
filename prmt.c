@@ -7,12 +7,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "mntr.h"
-
-//#define BUFLEN 1024
-//#define MAXNUM 100
+#define MAXSIZE 2000
 void delete_file_on_time(int sec, char *path, char *filename);
 void delete_file(char *saved_path, char *path, char *filename);
 int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur);
+void check_infos();
+void optimize_trash(struct dirent **namelist, int count);
 void print_size(file_stat *node, char *path, int d_num, int print_all);
 void print_tree(file_stat *node, int level, int *length, int *check);
 struct tm* get_time(char * time_string);
@@ -35,11 +35,15 @@ int main(void)
 	struct dirent **namelist;
 	struct tm *tm;
 	time_t now, reserv;	
-	int diff = 0;
+	int diff;
+	pid_t pid = getpid();
 	file_stat *head = malloc(sizeof(file_stat));
 
 	while(1)
 	{
+		if(pid != getpid()) // 부모 프로세스가 아니면 종료 
+			break;
+
 		printf("20162443>");
 		fgets(command_line, BUFLEN, stdin);
 		command_line[strlen(command_line)-1] = '\0';
@@ -102,7 +106,9 @@ int main(void)
 			mkdir("infos", 0755); // infos폴더 생성
 			chdir(main_path); // 다시 메인디렉토리로 이동
 
-			if(command_tokens[1][0] == '-' || command_tokens[1] == NULL){ // ENDTIME이 주어졌으면
+			diff = 0;
+
+			if(command_tokens[1][0] == '-' || strcmp(command_tokens[1], "")){ // ENDTIME이 주어졌으면
 				sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
 				tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
 
@@ -118,6 +124,8 @@ int main(void)
 			printf("wait time : %d\n", diff);
 
 			delete_file_on_time(diff, dpath, filename);
+
+			check_infos();
 
 			free(tmp);
 		}
@@ -200,14 +208,18 @@ void delete_file_on_time(int sec, char *path, char *filename)
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN);
 
-	if((pid = fork()) < 0){ // fork 밑 에러처리
-		fprintf(stderr, "fork error\n");
-		exit(1);
-	}
-	else if(pid == 0){ // 자식프로세스 (일정 시간 이후에 파일을 지워 줌)
-		sleep(sec);
+	if(sec > 0){ // 프로세스 분리가 필요하면
+		if((pid = fork()) < 0){ // fork 밑 에러처리
+			fprintf(stderr, "fork error\n");
+			exit(1);
+		}
+		else if(pid == 0){ // 자식프로세스 (일정 시간 이후에 파일을 지워 줌)
+			sleep(sec);
+			delete_file(saved_path, path, filename);
+		}
+	} // 필요 없으면
+	else
 		delete_file(saved_path, path, filename);
-	}
 }
 
 void delete_file(char *saved_path, char *path, char *filename)
@@ -222,46 +234,121 @@ void delete_file(char *saved_path, char *path, char *filename)
 	struct tm tm;
 	struct dirent **namelist;
 
-	strcpy(only_name, filename);
+	strcpy(only_name, filename); 
 	sprintf(files_path, "%s/%s", saved_path, "trash/files");
 	sprintf(infos_path, "%s/%s", saved_path, "trash/infos");
 
 	count = scandir(files_path, &namelist, NULL, alphasort);
 
-	make_unoverlap_name(namelist, count, only_name, 0);
+	make_unoverlap_name(namelist, count, only_name, 0); // 중복되는 이름있으면 처리
 
 	sprintf(tmp, "%s/%s", files_path, only_name);
 
 	stat(path, &statbuf);
-	rename(path, tmp);
-	t = time(NULL);
+	rename(path, tmp); // 파일을 trash/files로 이동
+	t = time(NULL); // 삭제시간 저장
 	tm = *localtime(&t);
 
 	sprintf(tmp, "%s/%s", infos_path, only_name);
-	chdir(infos_path);
+	chdir(infos_path); // trash/infos로 이동
 
-	if((fp = fopen(only_name, "w+"))< 0){
+	if((fp = fopen(only_name, "w+"))< 0){ // infos에 저장할 파일 생성
 		fprintf(stderr, "fopen error for %s\n", only_name);
 		exit(1);
 	}
 
-	fwrite(title, strlen(title), 1, fp);
+	fwrite(title, strlen(title), 1, fp); 
 	fwrite(path, strlen(path), 1, fp);
 	memset(tmp, 0, BUFLEN); 
 	sprintf(tmp, "\nD : %.4d-%.2d-%.2d %.2d:%.2d:%.2d\n",
-					tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
-					tm.tm_hour, tm.tm_min, tm.tm_sec); 
+			tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
+			tm.tm_hour, tm.tm_min, tm.tm_sec); 
 	fwrite(tmp, strlen(tmp), 1, fp);
 	tm = *localtime(&(statbuf.st_mtime));
 	memset(tmp, 0, BUFLEN); 
 	sprintf(tmp, "M : %.4d-%.2d-%.2d %.2d:%.2d:%.2d\n",
-					tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
-					tm.tm_hour, tm.tm_min, tm.tm_sec); 
+			tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday,							
+			tm.tm_hour, tm.tm_min, tm.tm_sec); 
 	fwrite(tmp, strlen(tmp), 1, fp);
 
 	fclose(fp);
 	chdir(saved_path);
 
+}
+
+void check_infos()
+{
+	int i, count, sum;
+	char saved_path[BUFLEN], infos_path[BUFLEN];
+	struct stat statbuf;
+	struct dirent **namelist;
+
+	memset(saved_path, 0, BUFLEN);
+	getcwd(saved_path, BUFLEN); // 메인 디렉토리 저장
+	sprintf(infos_path, "%s/%s", saved_path, "trash/infos");
+
+	while(1){ // trash/infos가 2KB를 초과하는지 체크 
+		count = scandir(infos_path, &namelist, NULL, alphasort);
+		sum = 0;
+		chdir(infos_path);
+
+		for(i = 0; i < count; i++){
+			if(!strcmp(namelist[i]->d_name, ".") || !strcmp(namelist[i]->d_name, ".."))
+				continue;
+
+			stat(namelist[i]->d_name, &statbuf);
+			sum += statbuf.st_size; // 디렉토리의 크기 측정
+		}
+
+		chdir(saved_path);
+
+		if(sum > MAXSIZE) // 디렉토리의 크기가 2KB가 넘으면
+			optimize_trash(namelist, count); // trash 디렉토리 최적화
+		else // 넘지 않으면
+			break;
+
+		for(i = 0; i < count; i++) // namelist 메모리 해제
+			free(namelist[i]);
+
+		free(namelist);
+	}
+	chdir(saved_path);
+}
+
+void optimize_trash(struct dirent **namelist, int count)
+{
+	int i;
+	char old_file[FILELEN];
+	char saved_path[BUFLEN], infos_path[BUFLEN], files_path[BUFLEN];
+	time_t min = -1;
+	struct stat statbuf;
+
+	memset(saved_path, 0, BUFLEN);
+	getcwd(saved_path, BUFLEN);
+	sprintf(infos_path, "%s/%s", saved_path, "trash/infos");
+	chdir(infos_path); // trash/infos로 작업 디렉토리 변경
+
+	for(i = 0; i < count; i++){
+		if(!strcmp(namelist[i]->d_name, ".") || !strcmp(namelist[i]->d_name, ".."))
+			continue;
+
+		stat(namelist[i]->d_name, &statbuf);
+
+		if(min < 0){ // 가장 오래된 파일 찾아줌
+			min = statbuf.st_mtime;
+			strcpy(old_file, namelist[i]->d_name);
+		}
+		else if(min > statbuf.st_mtime){
+			min = statbuf.st_mtime;
+			strcpy(old_file, namelist[i]->d_name);
+		}
+	}
+
+	remove(old_file); // 가장 오래된 파일 삭제
+	sprintf(files_path, "%s/%s", saved_path, "trash/files");
+	chdir(files_path);
+	remove(old_file);
+	chdir(saved_path);
 }
 
 int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur)
