@@ -10,6 +10,7 @@
 #define MAXSIZE 2000
 void delete_file_on_time(int sec, char *path, char *filename);
 void delete_file(char *saved_path, char *path, char *filename);
+void remove_file_on_time(int sec, char *path);
 int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur);
 void check_infos();
 void optimize_trash(struct dirent **namelist, int count);
@@ -21,11 +22,12 @@ void to_lower_case(char *str);
 void print_usage();
 
 file_stat size_table[BUFLEN];
+int d_option, i_option, r_option;
 
 int main(void)
 {
 	int i,j;
-	int count, command_count, d_option; 
+	int count, command_count; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
 	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
 	char *dpath;
@@ -45,12 +47,18 @@ int main(void)
 			break;
 
 		printf("20162443>");
+		memset(command_line, 0, BUFLEN);
 		fgets(command_line, BUFLEN, stdin);
 		command_line[strlen(command_line)-1] = '\0';
+		if(!strcmp(command_line, ""))
+			continue;
 
 		command_count = 0;
 		command = strtok(command_line, " ");
 		to_lower_case(command);
+
+		for(i = 0; i < MAXNUM; i++) // command 토큰리스트 초기화
+			memset(command_tokens, 0 , BUFLEN);
 
 		while((tmp = strtok(NULL, " ")) != NULL)
 			strcpy(command_tokens[command_count++], tmp);
@@ -62,10 +70,18 @@ int main(void)
 
 		if(!strcmp(command, "delete"))
 		{
+			r_option = FALSE;
+			i_option = FALSE;
+
 			if(!strcmp(command_tokens[0], "")){ // FILENAME 값이 없으면 예외처리
 				printf("Input the [FILENAME] please..\n");
 				continue;
 			}
+
+			if(!strcmp(command_tokens[1], "-i") || !strcmp(command_tokens[3], "-i"))
+				i_option = TRUE;
+			else if(!strcmp(command_tokens[1], "-r") || !strcmp(command_tokens[3], "-r"))
+				r_option = TRUE;
 
 			dpath = malloc(sizeof(char) * BUFLEN);
 			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
@@ -108,7 +124,7 @@ int main(void)
 
 			diff = 0;
 
-			if(command_tokens[1][0] == '-' || strcmp(command_tokens[1], "")){ // ENDTIME이 주어졌으면
+			if(command_tokens[1][0] != '-' || !strcmp(command_tokens[1], "")){ // ENDTIME이 주어졌으면
 				sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
 				tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
 
@@ -123,7 +139,10 @@ int main(void)
 			}
 			printf("wait time : %d\n", diff);
 
-			delete_file_on_time(diff, dpath, filename);
+			if(i_option == TRUE)
+				remove_file_on_time(diff, dpath);
+			else
+				delete_file_on_time(diff, dpath, filename);
 
 			check_infos();
 
@@ -137,10 +156,7 @@ int main(void)
 			apath = malloc(sizeof(char) * BUFLEN);
 			getcwd(apath, BUFLEN);
 
-			if(filename[0] != '.') // 절대경로로 변경
-				sprintf(apath, "%s/%s", apath, filename);
-			else
-				realpath(filename, apath);
+			realpath(filename, apath); // 절대경로로 변경
 
 			if(!strcmp(command_tokens[1], "-d"))
 				if((d_option = atoi(command_tokens[2])) == 0){
@@ -202,7 +218,7 @@ struct tm * get_time(char * time_string)
 
 void delete_file_on_time(int sec, char *path, char *filename)
 {
-	char saved_path[BUFLEN];
+	char ch, saved_path[BUFLEN];
 	pid_t pid;
 
 	memset(saved_path, 0, BUFLEN);
@@ -215,11 +231,26 @@ void delete_file_on_time(int sec, char *path, char *filename)
 		}
 		else if(pid == 0){ // 자식프로세스 (일정 시간 이후에 파일을 지워 줌)
 			sleep(sec);
-			delete_file(saved_path, path, filename);
+			if(r_option == FALSE)
+				delete_file(saved_path, path, filename);
+			else if(r_option == TRUE){
+				printf("\nDelete [y/n]? ");
+				ch = getchar();
+				if(ch == 'y')
+					delete_file(saved_path, path, filename);
+				printf("20162443>");
+			}
 		}
 	} // 필요 없으면
-	else
+	else if(r_option == FALSE)
 		delete_file(saved_path, path, filename);
+	else if(r_option == TRUE){
+		printf("\nDelete [y/n]? ");
+		ch = getchar();
+		getchar();
+		if(ch == 'y')
+			delete_file(saved_path, path, filename);
+	}
 }
 
 void delete_file(char *saved_path, char *path, char *filename)
@@ -274,6 +305,25 @@ void delete_file(char *saved_path, char *path, char *filename)
 	fclose(fp);
 	chdir(saved_path);
 
+}
+
+void remove_file_on_time(int sec, char *path)
+{
+	int i;
+	pid_t pid;
+
+	if(sec > 0){
+		if((pid = fork()) < 0){
+			fprintf(stderr, "fork error\n");
+			exit(1);
+		}
+		else if(pid == 0){
+			sleep(sec);
+			remove(path);
+		}
+	}
+	else
+		remove(path);
 }
 
 void check_infos()
@@ -388,14 +438,16 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 			getcwd(cur_path, BUFLEN);
 			rpath = now->name + strlen(cur_path);	
 			printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+			isTrue = TRUE;
 		}
-		else if(!strcmp(now->name, path)){
+
+		if(!strcmp(now->name, path)){
+			memset(cur_path, 0, BUFLEN);
+			getcwd(cur_path, BUFLEN);
+			rpath = now->name + strlen(cur_path);	
+			printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 			if(d_num == 1){
 				d_num--;
-				memset(cur_path, 0, BUFLEN);
-				getcwd(cur_path, BUFLEN);
-				rpath = now->name + strlen(cur_path);	
-				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 				break;
 			}
 			else if(d_num > 1){
@@ -409,8 +461,10 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 
 		if(S_ISDIR(now->statbuf.st_mode)){
 			if(now->down != NULL){
-				if(isTrue == TRUE)
+				if(isTrue == TRUE){
 					print_size(now->down, path, d_num-1, TRUE);
+					isTrue = FALSE;
+				}
 				else if(isTrue == FALSE)
 					print_size(now->down, path, d_num, FALSE);
 			}
