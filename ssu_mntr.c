@@ -10,7 +10,6 @@
 #include <sys/types.h>
 #include "ssu_mntr.h"
 
-
 char saved_path[BUFLEN], check_path[BUFLEN], log_path[BUFLEN];
 struct timetable change_list[MAXNUM];
 
@@ -101,9 +100,6 @@ void ssu_monitoring(char *path)
 		count = set_list(old_head->down, count, DELETE);
 		sort_time_table(count);
 
-		for(int a = 0; a < count; a++) // 개발용출력문
-			printf("%d, %s\n", change_list[a].content,change_list[a].name);
-
 		write_log(count); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
@@ -111,7 +107,7 @@ void ssu_monitoring(char *path)
 		old_count = new_count; 
 		init_node_content(old_head->down, UNCHECKED);
 
-		sleep(10); // 딜레이 
+		sleep(1); // 딜레이 
 	}
 }
 

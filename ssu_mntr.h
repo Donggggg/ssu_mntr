@@ -1,3 +1,5 @@
+#include <sys/stat.h>
+
 #define BUFLEN 1024
 #define FILELEN 100
 #define MAXNUM 100
@@ -47,6 +49,8 @@ void sort_time_table(int max);
 file_stat* all_nodes(file_stat* head);
 
 /*** main(프롬프트) 관련 함수 원형 ***/
+void ssu_prompt(void);
+
 void delete_file_on_time(int sec, char *path, char *filename);
 void delete_file(char *saved_path, char *path, char *filename);
 void remove_file_on_time(int sec, char *path);

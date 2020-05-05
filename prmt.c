@@ -11,7 +11,7 @@
 file_stat size_table[BUFLEN];
 int d_option, i_option, r_option, l_option;
 
-int main(void)
+void ssu_prompt()
 {
 	int i,j;
 	int count, command_count; 
@@ -195,7 +195,7 @@ int main(void)
 		}
 		else if(!strcmp(command, "exit"))
 		{
-			exit(0);
+			return ;
 		}
 		else
 		{
@@ -535,10 +535,10 @@ void recover_file(char *filename)
 	fread(tmp, strlen("[Trash info]\n"), 1, fplist[recover_num]); // 첫줄 제거
 	fscanf(fplist[recover_num], "%s\n", recover_path);
 
-//	printf("%s\n", recover_path);
+	//	printf("%s\n", recover_path);
 	memset(tmp, 0, BUFLEN);
 	strncpy(tmp, recover_path, strlen(recover_path) - strlen(filename) - 1);
-//	printf("%s\n", tmp);
+	//	printf("%s\n", tmp);
 
 	if(access(tmp, F_OK) < 0){ // 디렉토리가 사라진 경우 
 		printf("disapear original directory\n"); 
@@ -552,7 +552,7 @@ void recover_file(char *filename)
 	make_unoverlap_name(original, count, only_name, 0);
 	sprintf(recover_path, "%s/%s", tmp, only_name);
 
-//	printf("%s\n", recover_path);
+	//	printf("%s\n", recover_path);
 	remove(only_name_list[recover_num]);
 	chdir(files_path);
 	rename(only_name_list[recover_num], recover_path);
