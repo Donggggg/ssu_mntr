@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include "ssu_mntr.h"
 
+
 char saved_path[BUFLEN], check_path[BUFLEN], log_path[BUFLEN];
 struct timetable change_list[MAXNUM];
 

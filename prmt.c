@@ -6,23 +6,10 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "mntr.h"
-#define MAXSIZE 2000
-void delete_file_on_time(int sec, char *path, char *filename);
-void delete_file(char *saved_path, char *path, char *filename);
-void remove_file_on_time(int sec, char *path);
-int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur);
-void check_infos();
-void optimize_trash(struct dirent **namelist, int count);
-void print_size(file_stat *node, char *path, int d_num, int print_all);
-void print_tree(file_stat *node, int level, int *length, int *check);
-struct tm* get_time(char * time_string);
-int get_time_diffrence(struct tm tm);
-void to_lower_case(char *str);
-void print_usage();
+#include "ssu_mntr.h"
 
 file_stat size_table[BUFLEN];
-int d_option, i_option, r_option;
+int d_option, i_option, r_option, l_option;
 
 int main(void)
 {
@@ -30,7 +17,7 @@ int main(void)
 	int count, command_count; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
 	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
-	char *dpath;
+	char *dpath, saved_path[BUFLEN];
 	char command_tokens[BUFLEN][MAXNUM], time_table[4][5];
 	char *command, *tmp;
 	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
@@ -38,13 +25,30 @@ int main(void)
 	struct tm *tm;
 	time_t now, reserv;	
 	int diff;
-	pid_t pid = getpid();
+	pid_t pid = getpid(), daemon;
 	file_stat *head = malloc(sizeof(file_stat));
+
+	if((daemon = vfork()) < 0){
+		fprintf(stderr, "fork error\n");
+		exit(1);
+	}
+	else if(daemon == 0) // 모니터링 시작
+		execl("./ssu_mntr", "", (char*)0);
+
+	memset(saved_path, 0, BUFLEN);
+	getcwd(saved_path, BUFLEN);
 
 	while(1)
 	{
-		if(pid != getpid()) // 부모 프로세스가 아니면 종료 
+		if(pid != getpid()) // 부모 프로세스가 아니면 종료 (DELETE 명령어로 인해) 
 			break;
+
+		chdir(saved_path);
+
+		r_option = FALSE;
+		i_option = FALSE;
+		l_option = FALSE;
+		d_option = 1; // d옵션 넘버값
 
 		printf("20162443>");
 		memset(command_line, 0, BUFLEN);
@@ -84,7 +88,9 @@ int main(void)
 				r_option = TRUE;
 
 			dpath = malloc(sizeof(char) * BUFLEN);
+			chdir(path);
 			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
+			chdir(saved_path);
 			printf("ab path >%s\n", dpath);
 
 			strcpy(filename, command_tokens[0]);
@@ -124,7 +130,7 @@ int main(void)
 
 			diff = 0;
 
-			if(command_tokens[1][0] != '-' || !strcmp(command_tokens[1], "")){ // ENDTIME이 주어졌으면
+			if(command_tokens[1][0] >= '0' && command_tokens[1][0] <='9'){ // ENDTIME이 주어졌으면
 				sprintf(command_tokens[1], "%s %s ", command_tokens[1], command_tokens[2]);
 				tm = get_time(command_tokens[1]); // 삭제 예약시간에 대한 정보를 저장
 
@@ -138,6 +144,10 @@ int main(void)
 				diff = difftime(reserv, now); // 두 시간의 차 구함
 			}
 			printf("wait time : %d\n", diff);
+			if(diff < 0){
+				printf("Wrong ENDTIME input\n");
+				continue;
+			}
 
 			if(i_option == TRUE)
 				remove_file_on_time(diff, dpath);
@@ -151,7 +161,6 @@ int main(void)
 		else if(!strcmp(command, "size"))
 		{
 			head = make_tree(path);
-			d_option = 1;
 			strcpy(filename, command_tokens[0]);
 			apath = malloc(sizeof(char) * BUFLEN);
 			getcwd(apath, BUFLEN);
@@ -167,7 +176,14 @@ int main(void)
 			print_size(head, apath, d_option, FALSE);
 			free(apath);
 		}
-		else if(!strcmp(command, "recover")){}
+		else if(!strcmp(command, "recover"))
+		{
+			strcpy(filename, command_tokens[0]);
+			if(!strcmp(command_tokens[1],"-l"))
+				l_option = TRUE;
+
+			recover_file(filename);
+		}
 		else if(!strcmp(command, "tree")) // tree명령어 수행 
 		{
 			head = make_tree(path);
@@ -177,7 +193,10 @@ int main(void)
 			print_tree(head->down, 1, direc_length, lastfile_check);
 			printf("\n");
 		}
-		else if(!strcmp(command, "exit")){}
+		else if(!strcmp(command, "exit"))
+		{
+			exit(0);
+		}
 		else
 		{
 			print_usage();
@@ -258,7 +277,7 @@ void delete_file(char *saved_path, char *path, char *filename)
 	int i, count;
 	char *only_name = malloc(sizeof(char) * FILELEN);
 	char files_path[BUFLEN], infos_path[BUFLEN];
-	char tmp[BUFLEN], title[13] = "[Trash info]\n";
+	char tmp[BUFLEN];
 	FILE *fp;
 	time_t t;
 	struct stat statbuf;
@@ -288,7 +307,7 @@ void delete_file(char *saved_path, char *path, char *filename)
 		exit(1);
 	}
 
-	fwrite(title, strlen(title), 1, fp); 
+	fwrite("[Trash info]\n", 13, 1, fp); 
 	fwrite(path, strlen(path), 1, fp);
 	memset(tmp, 0, BUFLEN); 
 	sprintf(tmp, "\nD : %.4d-%.2d-%.2d %.2d:%.2d:%.2d\n",
@@ -424,6 +443,149 @@ int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int
 		return make_unoverlap_name(namelist, count, filename, cur+1); 
 }
 
+void recover_file(char *filename)
+{
+	int i, count, num, recover_num = 0, level = 0,isExist = FALSE;
+	char ch, tmp[BUFLEN], *str, *only_name, **only_name_list;
+	char saved_path[BUFLEN], infos_path[BUFLEN], files_path[BUFLEN];
+	char recover_path[BUFLEN], **D_time, **M_time;
+	FILE **fplist;
+	struct dirent **namelist, **original;
+
+	memset(saved_path, 0, BUFLEN);
+	getcwd(saved_path, BUFLEN);
+	sprintf(infos_path, "%s/%s", saved_path, "trash/infos");
+	sprintf(files_path, "%s/%s", saved_path, "trash/files");
+
+	chdir(infos_path);
+
+	count  = scandir(infos_path, &namelist, NULL, alphasort);
+	num = 0;
+
+	fplist = malloc(sizeof(FILE) * count);
+	only_name_list = malloc(sizeof(char*) * count);
+	D_time = malloc(sizeof(char*) * count);
+	M_time = malloc(sizeof(char*) * count);
+	for(i = 0; i < count; i++){
+		only_name_list[i] = malloc(sizeof(char) * FILELEN);
+		D_time[i] = malloc(sizeof(char) * 20);
+		M_time[i] = malloc(sizeof(char) * 20);
+	}
+
+	if(l_option){ // "-l" 옵션 처리
+		sort_files_by_mtime(namelist, count);
+		for(i = 0; i < count; i++){
+			if(!strcmp(namelist[i]->d_name, ".") || !strcmp(namelist[i]->d_name, ".."))
+				continue;
+
+			fplist[num] = fopen(namelist[i]->d_name, "r");
+
+			fread(tmp, strlen("[Trash info]\n"), 1, fplist[num]); // 첫줄 제거
+			fscanf(fplist[num], "%s\n", recover_path); // 절대 경로 저장
+			fread(D_time[num], strlen("D : 0000-00-00 00:00:00"), 1, fplist[num]);
+
+			printf("%d. %s		%s\n", ++level, namelist[i]->d_name, D_time[num]+4);
+			fclose(fplist[num]);
+		}
+	}
+
+	for(i = 0; i < count; i++){
+		if(!strcmp(namelist[i]->d_name, ".") || !strcmp(namelist[i]->d_name, ".."))
+			continue;
+
+		fplist[num] = fopen(namelist[i]->d_name, "r");
+
+		fread(tmp, strlen("[Trash info]\n"), 1, fplist[num]); // 첫줄 제거
+		fscanf(fplist[num], "%s\n", recover_path); // 절대 경로 저장
+
+		str = malloc(sizeof(char) * strlen(recover_path));
+		strcpy(str, recover_path);
+
+		for(str += strlen(str); *str != '/'; str--); // 원래 파일명 추출
+
+		if(!strcmp(str+1, filename)){
+			isExist = TRUE;
+			strcpy(only_name_list[num], namelist[i]->d_name);
+			fread(D_time[num], strlen("D : 0000-00-00 00:00:00"), 1, fplist[num]);
+			fgetc(fplist[num]);
+			fread(M_time[num], strlen("M : 0000-00-00 00:00:00"), 1, fplist[num]);
+			fclose(fplist[num]);
+			num++;
+		}
+		else
+			fclose(fplist[num]);
+	}
+
+	if(!isExist){
+		printf("%s is not exist in trash directory\n", filename);
+		return ;
+	}
+
+	if(num > 1){
+		for(i = 0; i < num; i++)
+			printf("%d.  %s  %s %s\n", i+1, filename, D_time[i], M_time[i]);
+		printf("Choose : ");
+		ch = getchar();
+		getchar();
+		recover_num = ch - 48;
+		recover_num--;
+	}
+
+	fplist[recover_num] = fopen(only_name_list[recover_num], "r");
+	fread(tmp, strlen("[Trash info]\n"), 1, fplist[recover_num]); // 첫줄 제거
+	fscanf(fplist[recover_num], "%s\n", recover_path);
+
+//	printf("%s\n", recover_path);
+	memset(tmp, 0, BUFLEN);
+	strncpy(tmp, recover_path, strlen(recover_path) - strlen(filename) - 1);
+//	printf("%s\n", tmp);
+
+	if(access(tmp, F_OK) < 0){ // 디렉토리가 사라진 경우 
+		printf("disapear original directory\n"); 
+		return ;
+	}
+
+	count = scandir(tmp, &original, NULL, alphasort);
+
+	only_name = malloc(sizeof(char) * FILELEN);
+	strcpy(only_name, filename);
+	make_unoverlap_name(original, count, only_name, 0);
+	sprintf(recover_path, "%s/%s", tmp, only_name);
+
+//	printf("%s\n", recover_path);
+	remove(only_name_list[recover_num]);
+	chdir(files_path);
+	rename(only_name_list[recover_num], recover_path);
+}
+
+void sort_files_by_mtime(struct dirent **namelist, int count)
+{
+	int i, j;
+	time_t timelist[count - 2], tmp;
+	struct stat statbuf;
+	struct dirent *tmp_d;
+
+	for(i = 0; i < count; i++){
+		if(!strcmp(namelist[i]->d_name, ".") || !strcmp(namelist[i]->d_name, ".."))
+			continue;
+
+		stat(namelist[i]->d_name, &statbuf);
+		timelist[i] = statbuf.st_mtime;
+	}	
+
+	for(i = 2; i < count; i++)
+		for(j = i+1; j < count; j++)
+			if(timelist[i] > timelist[j]){
+				tmp = timelist[i];
+				timelist[i] = timelist[j];
+				timelist[j] = tmp;
+				tmp_d = namelist[i];
+				namelist[i] = namelist[j];
+				namelist[j] = tmp_d;
+			}
+
+}
+
 void print_size(file_stat *node, char *path, int d_num, int print_all)
 {
 	char cur_path[BUFLEN], *rpath;
@@ -437,15 +599,24 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 			memset(cur_path, 0, BUFLEN);
 			getcwd(cur_path, BUFLEN);
 			rpath = now->name + strlen(cur_path);	
-			printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 			isTrue = TRUE;
+
+			if(S_ISDIR(now->statbuf.st_mode))
+				printf("%ld	.%s\n", print_sum_of_down_files(now), rpath);
+			else
+				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 		}
 
 		if(!strcmp(now->name, path)){
 			memset(cur_path, 0, BUFLEN);
 			getcwd(cur_path, BUFLEN);
 			rpath = now->name + strlen(cur_path);	
-			printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+
+			if(S_ISDIR(now->statbuf.st_mode))
+				printf("%ld	.%s\n", print_sum_of_down_files(now), rpath);
+			else
+				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
+
 			if(d_num == 1){
 				d_num--;
 				break;
@@ -475,6 +646,29 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 		else
 			break; 
 	} 
+}
+
+long int print_sum_of_down_files(file_stat *node)
+{
+	long int sum = 0;
+	file_stat *now = malloc(sizeof(file_stat));
+	now = node->down;
+
+	while(1){
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL)
+				sum += print_sum_of_down_files(now);
+		}
+		else
+			sum += now->statbuf.st_size;
+
+		if(now->next != NULL)
+			now = now->next;
+		else
+			break; 
+	}
+
+	return sum;
 }
 
 void print_tree(file_stat *node, int level, int *length, int *check)
