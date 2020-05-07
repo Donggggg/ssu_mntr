@@ -103,6 +103,7 @@ void ssu_monitoring(char *path)
 		write_log(count); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
+	    free_tree(old_head);
 		old_head = new_head; 
 		old_count = new_count; 
 		init_node_content(old_head->down, UNCHECKED);
@@ -346,4 +347,25 @@ void sort_time_table(int max)
 				change_list[j] = tmp;
 			}
 		}
+}
+
+void free_tree(file_stat *node)
+{
+	file_stat *now = malloc(sizeof(file_stat));
+	now = node;
+
+	while(1)
+	{
+		free(now);
+
+		if(S_ISDIR(now->statbuf.st_mode)){
+			if(now->down != NULL)
+				free_tree(now->down);
+		}
+
+		if(now->next != NULL)
+			now = now->next;
+		else
+			break; 
+	} 
 }

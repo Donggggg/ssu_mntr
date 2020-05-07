@@ -13,27 +13,26 @@ int d_option, i_option, r_option, l_option;
 
 void ssu_prompt()
 {
-	int i,j;
-	int count, command_count; 
+	int i, j, count, command_count, diff; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
-	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], *apath, *rpath;
-	char *dpath, saved_path[BUFLEN];
+	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], saved_path[BUFLEN];
+	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
+	char *dpath, *apath, *rpath;
 	char command_tokens[BUFLEN][MAXNUM], time_table[4][5];
 	char *command, *tmp;
-	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
 	struct dirent **namelist;
+	struct stat statbuf;
 	struct tm *tm;
 	time_t now, reserv;	
-	int diff;
 	pid_t pid = getpid(), daemon;
 	file_stat *head = malloc(sizeof(file_stat));
 
-	if((daemon = vfork()) < 0){
+	if((daemon = vfork()) < 0){ 
 		fprintf(stderr, "fork error\n");
 		exit(1);
 	}
 	else if(daemon == 0) // 모니터링 시작
-		execl("./ssu_mntr", "", (char*)0);
+		execl("./monitoring", "", (char*)0);
 
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN);
@@ -54,6 +53,7 @@ void ssu_prompt()
 		memset(command_line, 0, BUFLEN);
 		fgets(command_line, BUFLEN, stdin);
 		command_line[strlen(command_line)-1] = '\0';
+
 		if(!strcmp(command_line, ""))
 			continue;
 
@@ -72,11 +72,8 @@ void ssu_prompt()
 		getcwd(main_path, BUFLEN);
 		sprintf(path, "%s/%s", main_path, "check");
 
-		if(!strcmp(command, "delete"))
+		if(!strcmp(command, "delete")) // delete명령어 처리
 		{
-			r_option = FALSE;
-			i_option = FALSE;
-
 			if(!strcmp(command_tokens[0], "")){ // FILENAME 값이 없으면 예외처리
 				printf("Input the [FILENAME] please..\n");
 				continue;
@@ -91,28 +88,29 @@ void ssu_prompt()
 			chdir(path);
 			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
 			chdir(saved_path);
-			printf("ab path >%s\n", dpath);
 
 			strcpy(filename, command_tokens[0]);
 			tmp = strtok(command_tokens[0], "/"); // 삭제할 파일명 추출
 			while((tmp = strtok(NULL, "/")) != NULL)
 				strcpy(filename, tmp);
-			printf("delfile> %s\n", filename);
 
 			tmp = dpath;
 			count = 0;
+
 			for(tmp += strlen(dpath)-strlen(filename)-2; *tmp != '/'; tmp--)
 				count++;
+
 			strncpy(direcname, tmp+1, count); // 삭제할 파일의 디렉토리명 추출
-			printf("direc> %s\n", direcname);
 			memset(direc_path, 0, BUFLEN);
 			strncpy(direc_path, dpath, strlen(dpath) - strlen(filename)-1); // 삭제할 파일의 디렉토리의 절대경로
 
 			count = scandir(direc_path, &namelist, NULL, alphasort);
+
 			for(i = 0; i < count; i++){ // 삭제할 파일이 해당 디렉토리에 있는지 검사
 				if(!strcmp(namelist[i]->d_name, filename))
 					break;
 			}
+
 			if(i==count){ // 없으면 예외처리
 				printf("file(%s) is not in directory(%s)\n", filename, direcname);
 				continue;
@@ -143,14 +141,20 @@ void ssu_prompt()
 				reserv = mktime(tm); // 삭제가 예약된 시간
 				diff = difftime(reserv, now); // 두 시간의 차 구함
 			}
-			printf("wait time : %d\n", diff);
+
 			if(diff < 0){
 				printf("Wrong ENDTIME input\n");
 				continue;
 			}
 
-			if(i_option == TRUE)
+			if(i_option == TRUE){
+				stat(dpath, &statbuf);
+				if(S_ISDIR(statbuf.st_mode)){
+					printf("-i option is only for file\n");
+					continue;
+				}
 				remove_file_on_time(diff, dpath);
+			}
 			else
 				delete_file_on_time(diff, dpath, filename);
 
@@ -158,8 +162,13 @@ void ssu_prompt()
 
 			free(tmp);
 		}
-		else if(!strcmp(command, "size"))
+		else if(!strcmp(command, "size")) // size 명령어 처리
 		{
+			if(!strcmp(command_tokens[0], "")){ // FILENAME 값이 없으면 예외처리
+				printf("Input the [FILENAME] please..\n");
+				continue;
+			}
+
 			head = make_tree(path);
 			strcpy(filename, command_tokens[0]);
 			apath = malloc(sizeof(char) * BUFLEN);
@@ -176,31 +185,31 @@ void ssu_prompt()
 			print_size(head, apath, d_option, FALSE);
 			free(apath);
 		}
-		else if(!strcmp(command, "recover"))
+		else if(!strcmp(command, "recover")) // recover 명령어 처리
 		{
+			if(!strcmp(command_tokens[0], "")){ // FILENAME 값이 없으면 예외처리
+				printf("Input the [FILENAME] please..\n");
+				continue;
+			}
+
 			strcpy(filename, command_tokens[0]);
 			if(!strcmp(command_tokens[1],"-l"))
 				l_option = TRUE;
 
 			recover_file(filename);
 		}
-		else if(!strcmp(command, "tree")) // tree명령어 수행 
+		else if(!strcmp(command, "tree")) // tree명령어 처리
 		{
 			head = make_tree(path);
 			direc_length[0] = 5;
 			lastfile_check[0] = TRUE;
+
 			printf("check------");
 			print_tree(head->down, 1, direc_length, lastfile_check);
 			printf("\n");
 		}
-		else if(!strcmp(command, "exit"))
-		{
-			return ;
-		}
-		else
-		{
-			print_usage();
-		}
+		else if(!strcmp(command, "exit")) {return ;} // exit명렁어 처리
+		else {print_usage();} // help 명령어와 그 외 처리
 	}
 }
 
@@ -260,7 +269,7 @@ void delete_file_on_time(int sec, char *path, char *filename)
 				printf("20162443>");
 			}
 		}
-	} // 필요 없으면
+	}
 	else if(r_option == FALSE)
 		delete_file(saved_path, path, filename);
 	else if(r_option == TRUE){
@@ -276,8 +285,7 @@ void delete_file(char *saved_path, char *path, char *filename)
 {
 	int i, count;
 	char *only_name = malloc(sizeof(char) * FILELEN);
-	char files_path[BUFLEN], infos_path[BUFLEN];
-	char tmp[BUFLEN];
+	char files_path[BUFLEN], infos_path[BUFLEN], tmp[BUFLEN];
 	FILE *fp;
 	time_t t;
 	struct stat statbuf;
@@ -323,7 +331,6 @@ void delete_file(char *saved_path, char *path, char *filename)
 
 	fclose(fp);
 	chdir(saved_path);
-
 }
 
 void remove_file_on_time(int sec, char *path)
@@ -445,7 +452,7 @@ int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int
 
 void recover_file(char *filename)
 {
-	int i, count, num, recover_num = 0, level = 0,isExist = FALSE;
+	int i, count, num, recover_num = 0, level = 0, isExist = FALSE;
 	char ch, tmp[BUFLEN], *str, *only_name, **only_name_list;
 	char saved_path[BUFLEN], infos_path[BUFLEN], files_path[BUFLEN];
 	char recover_path[BUFLEN], **D_time, **M_time;
@@ -535,10 +542,8 @@ void recover_file(char *filename)
 	fread(tmp, strlen("[Trash info]\n"), 1, fplist[recover_num]); // 첫줄 제거
 	fscanf(fplist[recover_num], "%s\n", recover_path);
 
-	//	printf("%s\n", recover_path);
 	memset(tmp, 0, BUFLEN);
 	strncpy(tmp, recover_path, strlen(recover_path) - strlen(filename) - 1);
-	//	printf("%s\n", tmp);
 
 	if(access(tmp, F_OK) < 0){ // 디렉토리가 사라진 경우 
 		printf("disapear original directory\n"); 
@@ -552,7 +557,6 @@ void recover_file(char *filename)
 	make_unoverlap_name(original, count, only_name, 0);
 	sprintf(recover_path, "%s/%s", tmp, only_name);
 
-	//	printf("%s\n", recover_path);
 	remove(only_name_list[recover_num]);
 	chdir(files_path);
 	rename(only_name_list[recover_num], recover_path);
@@ -583,7 +587,6 @@ void sort_files_by_mtime(struct dirent **namelist, int count)
 				namelist[i] = namelist[j];
 				namelist[j] = tmp_d;
 			}
-
 }
 
 void print_size(file_stat *node, char *path, int d_num, int print_all)

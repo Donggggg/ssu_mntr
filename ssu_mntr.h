@@ -47,6 +47,7 @@ int set_list(file_stat *node, int count, int status);
 void write_log(int count);
 void sort_time_table(int max);
 file_stat* all_nodes(file_stat* head);
+void free_tree(file_stat *node);
 
 /*** main(프롬프트) 관련 함수 원형 ***/
 void ssu_prompt(void);
