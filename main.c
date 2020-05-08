@@ -10,29 +10,30 @@ void ssu_runtime(struct timeval *begin_t, struct timeval *end_t);
 
 int main(int argc, char *argv[])
 {
-	pid_t pid = getpid();
-	struct timeval begin_t, end_t;
-	gettimeofday(&begin_t, NULL);
+		pid_t pid = getpid();
+			struct timeval begin_t, end_t;
+				gettimeofday(&begin_t, NULL);
 
-	ssu_prompt();
+					ssu_prompt();
 
-	if(pid == getpid()){
-		gettimeofday(&end_t, NULL);
-		ssu_runtime(&begin_t, &end_t);
-	}
+						if(pid == getpid()){
+									gettimeofday(&end_t, NULL);
+											ssu_runtime(&begin_t, &end_t);
+												}
 
-	exit(0);
+							exit(0);
 }
 
 void ssu_runtime(struct timeval *begin_t, struct timeval *end_t)
 {
-	end_t->tv_sec -= begin_t->tv_sec;
+		end_t->tv_sec -= begin_t->tv_sec;
 
-	if(end_t->tv_usec < begin_t->tv_usec){
-		end_t->tv_sec--;
-		end_t->tv_usec += SECOND_TO_MICRO;
-	}
+			if(end_t->tv_usec < begin_t->tv_usec){
+						end_t->tv_sec--;
+								end_t->tv_usec += SECOND_TO_MICRO;
+									}
 
-	end_t->tv_usec -= begin_t->tv_usec;
-	printf("Runtime: %ld:%06ld(sec:usec)\n", end_t->tv_sec, end_t->tv_usec);
+				end_t->tv_usec -= begin_t->tv_usec;
+					printf("Runtime: %ld:%06ld(sec:usec)\n", end_t->tv_sec, end_t->tv_usec);
 }
+
