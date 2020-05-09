@@ -47,7 +47,6 @@ int set_list(file_stat *node, int count, int status);
 void write_log(int count);
 void sort_time_table(int max);
 file_stat* all_nodes(file_stat* head);
-void free_tree(file_stat *node);
 
 /*** main(프롬프트) 관련 함수 원형 ***/
 void ssu_prompt(void);
@@ -68,6 +67,5 @@ long int print_sum_of_down_files(file_stat *node);
 void print_tree(file_stat *node, int level, int *length, int *check);
 
 struct tm* get_time(char * time_string);
-int get_time_diffrence(struct tm tm);
 void to_lower_case(char *str);
 void print_usage();

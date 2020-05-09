@@ -96,15 +96,14 @@ void ssu_monitoring(char *path)
 			continue;
 		}
 
-		compare_tree(new_head->down, old_head->down);
-		count = set_list(new_head->down, 0, CREATE);
-		count = set_list(old_head->down, count, DELETE);
-		sort_time_table(count);
+		compare_tree(new_head->down, old_head->down); // 두 트리 비교
+		count = set_list(new_head->down, 0, CREATE); // CREATE된 파일 체크
+		count = set_list(old_head->down, count, DELETE); // DELETE된 파일 체크
+		sort_time_table(count); // 시간 순에 맞춰 리스트 정렬
 
 		write_log(count); // "log.txt"에 변경사항 입력
 
 		// 이번 정보를 이전 정보로 변경
-	//    free_tree(old_head);
 		old_head = new_head; 
 		old_count = new_count; 
 		init_node_content(old_head->down, UNCHECKED);
@@ -165,7 +164,7 @@ void init_node_content(file_stat *node, int status)
 
 	while(1)
 	{
-		now->content = status;
+		now->content = status; // 해당 노드 상태 변경
 
 		if(S_ISDIR(now->statbuf.st_mode)){
 			if(now->down != NULL)
@@ -348,25 +347,4 @@ void sort_time_table(int max)
 				change_list[j] = tmp;
 			}
 		}
-}
-
-void free_tree(file_stat *node)
-{
-	file_stat *now = malloc(sizeof(file_stat));
-	now = node;
-
-	while(1)
-	{
-		free(now);
-
-		if(S_ISDIR(now->statbuf.st_mode)){
-			if(now->down != NULL)
-				free_tree(now->down);
-		}
-
-		if(now->next != NULL)
-			now = now->next;
-		else
-			break; 
-	} 
 }

@@ -15,7 +15,7 @@ void ssu_prompt()
 {
 	int i, j, count, command_count, diff; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
-	char command_line[BUFLEN], path[BUFLEN], main_path[BUFLEN], saved_path[BUFLEN];
+	char command_line[BUFLEN], path[BUFLEN], saved_path[BUFLEN];
 	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
 	char *dpath, *apath, *rpath;
 	char command_tokens[BUFLEN][MAXNUM], time_table[4][5];
@@ -27,7 +27,7 @@ void ssu_prompt()
 	pid_t pid = getpid(), daemon;
 	file_stat *head = malloc(sizeof(file_stat));
 
-	if((daemon = vfork()) < 0){ 
+	if((daemon = vfork()) < 0){ // 모니터링 프로그램 실행 시키기 위해 vfork()
 		fprintf(stderr, "fork error\n");
 		exit(1);
 	}
@@ -35,14 +35,14 @@ void ssu_prompt()
 		execl("./monitoring", "", (char*)0);
 
 	memset(saved_path, 0, BUFLEN);
-	getcwd(saved_path, BUFLEN);
+	getcwd(saved_path, BUFLEN); // 현재 작업 경로 저장
 
 	while(1)
 	{
 		if(pid != getpid()) // 부모 프로세스가 아니면 종료 (DELETE 명령어로 인해) 
 			break;
 
-		chdir(saved_path);
+		chdir(saved_path); // 현재 작업 경로로 이동 
 
 		r_option = FALSE;
 		i_option = FALSE;
@@ -50,27 +50,25 @@ void ssu_prompt()
 		d_option = 1; // d옵션 넘버값
 
 		printf("20162443>");
-		memset(command_line, 0, BUFLEN);
-		fgets(command_line, BUFLEN, stdin);
-		command_line[strlen(command_line)-1] = '\0';
+		memset(command_line, 0, BUFLEN); 
+		fgets(command_line, BUFLEN, stdin); // 명령어 라인 획득 
+		command_line[strlen(command_line)-1] = '\0'; // 명령어 라인 마지막 문자 널문자로 바꿈
 
-		if(!strcmp(command_line, ""))
+		if(!strcmp(command_line, "")) // enter 들어오면 continue
 			continue;
 
 		command_count = 0;
 		command = strtok(command_line, " ");
-		to_lower_case(command);
+		to_lower_case(command); // 명령어 소문자로 바꿔줌
 
 		for(i = 0; i < MAXNUM; i++) // command 토큰리스트 초기화
 			memset(command_tokens, 0 , BUFLEN);
 
-		while((tmp = strtok(NULL, " ")) != NULL)
+		while((tmp = strtok(NULL, " ")) != NULL) // 명령어 라인 분리
 			strcpy(command_tokens[command_count++], tmp);
 
 		memset(path, 0, BUFLEN);
-		memset(main_path, 0, BUFLEN);
-		getcwd(main_path, BUFLEN);
-		sprintf(path, "%s/%s", main_path, "check");
+		sprintf(path, "%s/%s", saved_path, "check"); // 지정된 디렉토리 절대경로 path 에 저장
 
 		if(!strcmp(command, "delete")) // delete명령어 처리
 		{
@@ -79,17 +77,18 @@ void ssu_prompt()
 				continue;
 			}
 
+			// 옵션 처리
 			if(!strcmp(command_tokens[1], "-i") || !strcmp(command_tokens[3], "-i"))
 				i_option = TRUE;
 			else if(!strcmp(command_tokens[1], "-r") || !strcmp(command_tokens[3], "-r"))
 				r_option = TRUE;
 
 			dpath = malloc(sizeof(char) * BUFLEN);
-			chdir(path);
-			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로)
-			chdir(saved_path);
+			chdir(path); // 지정된 디렉토리로 이동
+			realpath(command_tokens[0], dpath); // 삭제할 파일의 경로(절대경로) 
+			chdir(saved_path); // 실행 디렉토리로 이동
 
-			strcpy(filename, command_tokens[0]);
+			strcpy(filename, command_tokens[0]); // filename에 파일 절대 경로 저장
 			tmp = strtok(command_tokens[0], "/"); // 삭제할 파일명 추출
 			while((tmp = strtok(NULL, "/")) != NULL)
 				strcpy(filename, tmp);
@@ -124,7 +123,7 @@ void ssu_prompt()
 			chdir(tmp); // trash디렉토리로 작업 이동
 			mkdir("files", 0755); // files폴더 생성
 			mkdir("info", 0755); // info폴더 생성
-			chdir(main_path); // 다시 메인디렉토리로 이동
+			chdir(saved_path); // 다시 메인디렉토리로 이동
 
 			diff = 0;
 
@@ -142,23 +141,23 @@ void ssu_prompt()
 				diff = difftime(reserv, now); // 두 시간의 차 구함
 			}
 
-			if(diff < 0){
+			if(diff < 0){ // ENDTIME 예외 처리
 				printf("Wrong ENDTIME input\n");
 				continue;
 			}
 
-			if(i_option == TRUE){
+			if(i_option == TRUE){ // -i 옵션 처리
 				stat(dpath, &statbuf);
-				if(S_ISDIR(statbuf.st_mode)){
+				if(S_ISDIR(statbuf.st_mode)){ // -i 옵션 디렉토리에 주면 에러 처리
 					printf("-i option is only for file\n");
 					continue;
 				}
 				remove_file_on_time(diff, dpath);
 			}
-			else
+			else // -i 옵션 없으면 
 				delete_file_on_time(diff, dpath, filename);
 
-			check_infos();
+			check_infos(); // info 디렉토리 2KB 안넘는지 검사
 
 			free(tmp);
 		}
@@ -193,7 +192,7 @@ void ssu_prompt()
 			}
 
 			strcpy(filename, command_tokens[0]);
-			if(!strcmp(command_tokens[1],"-l"))
+			if(!strcmp(command_tokens[1],"-l")) // -l 옵션 처리
 				l_option = TRUE;
 
 			recover_file(filename);
@@ -274,9 +273,9 @@ void delete_file_on_time(int sec, char *path, char *filename)
 			}
 		}
 	}
-	else if(r_option == FALSE)
+	else if(r_option == FALSE) // -r 옵션 없으면
 		delete_file(saved_path, path, filename);
-	else if(r_option == TRUE){
+	else if(r_option == TRUE){ // -r 옵션 있으면
 		printf("\nDelete [y/n]? ");
 		ch = getchar();
 		getchar();
@@ -603,7 +602,7 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 
 	while(d_num != 0)
 	{
-		if(print_all == TRUE){
+		if(print_all == TRUE){ // 해당 디렉토리 하위 파일이면 전체 출력
 			memset(cur_path, 0, BUFLEN);
 			getcwd(cur_path, BUFLEN);
 			rpath = now->name + strlen(cur_path);	
@@ -615,7 +614,7 @@ void print_size(file_stat *node, char *path, int d_num, int print_all)
 				printf("%ld	.%s\n", now->statbuf.st_size, rpath);
 		}
 
-		if(!strcmp(now->name, path)){
+		if(!strcmp(now->name, path)){ // 찾은 경우
 			memset(cur_path, 0, BUFLEN);
 			getcwd(cur_path, BUFLEN);
 			rpath = now->name + strlen(cur_path);	
