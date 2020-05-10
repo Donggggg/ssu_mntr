@@ -18,7 +18,7 @@ void ssu_prompt()
 {
 	int i, j, count, command_count, diff; 
 	int	direc_length[MAXNUM],lastfile_check[MAXNUM];
-	char command_line[BUFLEN], path[BUFLEN], saved_path[BUFLEN];
+	char command_line[BUFLEN], path[BUFLEN+6], saved_path[BUFLEN];
 	char filename[FILELEN], direcname[FILELEN], direc_path[BUFLEN];
 	char *dpath, *apath, *rpath;
 	char command_tokens[BUFLEN][MAXNUM], time_table[4][5];
@@ -30,13 +30,13 @@ void ssu_prompt()
 	pid_t pid = getpid(), daemon;
 	file_stat *head = malloc(sizeof(file_stat));
 
-/*	if((daemon = vfork()) < 0){ // 모니터링 프로그램 실행 시키기 위해 vfork()
+	if((daemon = vfork()) < 0){ // 모니터링 프로그램 실행 시키기 위해 vfork()
 		fprintf(stderr, "fork error\n");
 		exit(1);
 	}
 	else if(daemon == 0) // 모니터링 시작
 		execl("./monitoring", "", (char*)0);
-*/
+
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN); // 현재 작업 경로 저장
 
@@ -277,14 +277,12 @@ void delete_file_on_time(int sec, char *path, char *filename)
 				delete_file(saved_path, path, filename);
 			else if(r_option == TRUE){
 				kill(ppid, SIGUSR1);
-				sleep(10);
 				printf("\nDelete [y/n]? ");
 				ch = getchar();
 				if(ch == 'y')
 					delete_file(saved_path, path, filename);
 				kill(ppid, SIGUSR2);
-				sleep(100);
-				printf("20162443>");
+				//printf("20162443>");
 			}
 		}
 	}
@@ -300,20 +298,16 @@ void delete_file_on_time(int sec, char *path, char *filename)
 }
 
 void control_parent_stdin(int signo){
-	if(signo == SIGUSR1)
-	{
+	if(signo == SIGUSR1){
 		fd_stdin = dup(0);
 		fd_stdout = dup(1);
 		close(0);
 		close(1);
 
 	}
-
-	else if(signo == SIGUSR2)
-	{
+	else if(signo == SIGUSR2){
 		dup2(fd_stdin, 0);
 		dup2(fd_stdout, 1);
-
 	}
 }
 
@@ -321,7 +315,7 @@ void delete_file(char *saved_path, char *path, char *filename)
 {
 	int i, count;
 	char *only_name = malloc(sizeof(char) * FILELEN);
-	char files_path[BUFLEN], infos_path[BUFLEN], tmp[BUFLEN];
+	char files_path[BUFLEN], infos_path[BUFLEN], tmp[BUFLEN+FILELEN];
 	FILE *fp;
 	time_t t;
 	struct stat statbuf;
@@ -391,7 +385,7 @@ void remove_file_on_time(int sec, char *path)
 void check_infos()
 {
 	int i, count, sum;
-	char saved_path[BUFLEN], infos_path[BUFLEN];
+	char saved_path[BUFLEN], infos_path[BUFLEN+11];
 	struct stat statbuf;
 	struct dirent **namelist;
 
@@ -431,7 +425,7 @@ void optimize_trash(struct dirent **namelist, int count)
 {
 	int i;
 	char old_file[FILELEN];
-	char saved_path[BUFLEN], infos_path[BUFLEN], files_path[BUFLEN];
+	char saved_path[BUFLEN], infos_path[BUFLEN+11], files_path[BUFLEN+12];
 	time_t min = -1;
 	struct stat statbuf;
 
@@ -491,8 +485,8 @@ void recover_file(char *filename)
 {
 	int i, count, num, recover_num = 0, level = 0, isExist = FALSE;
 	char ch, tmp[BUFLEN], *str, *only_name, **only_name_list;
-	char saved_path[BUFLEN], infos_path[BUFLEN], files_path[BUFLEN];
-	char recover_path[BUFLEN], **D_time, **M_time;
+	char saved_path[BUFLEN], infos_path[BUFLEN+11], files_path[BUFLEN+12];
+	char recover_path[BUFLEN+FILELEN], **D_time, **M_time;
 	FILE **fplist;
 	struct dirent **namelist, **original;
 
