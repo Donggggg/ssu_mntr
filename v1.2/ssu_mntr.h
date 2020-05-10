@@ -53,6 +53,7 @@ void ssu_prompt(void);
 
 void delete_file_on_time(int sec, char *path, char *filename);
 void delete_file(char *saved_path, char *path, char *filename);
+void control_parent_stdin(int signo);
 void remove_file_on_time(int sec, char *path);
 int make_unoverlap_name(struct dirent **namelist, int count, char* filename, int cur);
 void check_infos();

@@ -6,10 +6,13 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <signal.h>
+#include <fcntl.h>
 #include "ssu_mntr.h"
 
 file_stat size_table[BUFLEN];
 int d_option, i_option, r_option, l_option;
+int fd_stdin, fd_stdout;
 
 void ssu_prompt()
 {
@@ -27,15 +30,18 @@ void ssu_prompt()
 	pid_t pid = getpid(), daemon;
 	file_stat *head = malloc(sizeof(file_stat));
 
-	if((daemon = vfork()) < 0){ // 모니터링 프로그램 실행 시키기 위해 vfork()
+/*	if((daemon = vfork()) < 0){ // 모니터링 프로그램 실행 시키기 위해 vfork()
 		fprintf(stderr, "fork error\n");
 		exit(1);
 	}
 	else if(daemon == 0) // 모니터링 시작
 		execl("./monitoring", "", (char*)0);
-
+*/
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN); // 현재 작업 경로 저장
+
+	signal(SIGUSR1, control_parent_stdin);
+	signal(SIGUSR2, control_parent_stdin);
 
 	while(1)
 	{
@@ -254,7 +260,8 @@ struct tm * get_time(char * time_string)
 void delete_file_on_time(int sec, char *path, char *filename)
 {
 	char ch, saved_path[BUFLEN];
-	pid_t pid;
+	pid_t pid, ppid;
+	ppid = getpid();
 
 	memset(saved_path, 0, BUFLEN);
 	getcwd(saved_path, BUFLEN);
@@ -269,10 +276,14 @@ void delete_file_on_time(int sec, char *path, char *filename)
 			if(r_option == FALSE)
 				delete_file(saved_path, path, filename);
 			else if(r_option == TRUE){
+				kill(ppid, SIGUSR1);
+				sleep(10);
 				printf("\nDelete [y/n]? ");
 				ch = getchar();
 				if(ch == 'y')
 					delete_file(saved_path, path, filename);
+				kill(ppid, SIGUSR2);
+				sleep(100);
 				printf("20162443>");
 			}
 		}
@@ -285,6 +296,24 @@ void delete_file_on_time(int sec, char *path, char *filename)
 		getchar();
 		if(ch == 'y')
 			delete_file(saved_path, path, filename);
+	}
+}
+
+void control_parent_stdin(int signo){
+	if(signo == SIGUSR1)
+	{
+		fd_stdin = dup(0);
+		fd_stdout = dup(1);
+		close(0);
+		close(1);
+
+	}
+
+	else if(signo == SIGUSR2)
+	{
+		dup2(fd_stdin, 0);
+		dup2(fd_stdout, 1);
+
 	}
 }
 
