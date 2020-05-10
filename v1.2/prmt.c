@@ -211,7 +211,11 @@ void ssu_prompt()
 			}
 			printf("\n");
 		}
-		else if(!strcmp(command, "exit")) {return ;} // exit명렁어 처리
+		else if(!strcmp(command, "exit")) // exit 명령어 처리
+		{
+			printf("Program is finished\n");
+			return ;
+		}
 		else {print_usage();} // help 명령어와 그 외 처리
 	}
 }
@@ -660,6 +664,9 @@ long int print_sum_of_down_files(file_stat *node)
 	long int sum = 0;
 	file_stat *now = malloc(sizeof(file_stat));
 	now = node->down;
+
+	if(now == NULL)
+		return 0;
 
 	while(1){
 		if(S_ISDIR(now->statbuf.st_mode)){
