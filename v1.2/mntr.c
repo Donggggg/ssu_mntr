@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include "ssu_mntr.h"
 
-char saved_path[BUFLEN], check_path[BUFLEN], log_path[BUFLEN];
+char saved_path[BUFLEN], check_path[BUFLEN+6], log_path[BUFLEN+8];
 struct timetable change_list[MAXNUM];
 
 int main(void)
@@ -32,12 +32,8 @@ int main(void)
 	}
 	fclose(fp);
 
-	memset(saved_path, 0, BUFLEN);
-	getcwd(saved_path, BUFLEN); // 현재 작업 경로를 저장
-	sprintf(saved_path, "%s/%s", saved_path, "check");
-
 	daemon_init(); // 디몬 프로세스로 변경
-	ssu_monitoring(saved_path); // 모니터링 시작
+	ssu_monitoring(check_path); // 모니터링 시작
 
 	exit(0);
 }
@@ -162,6 +158,9 @@ void init_node_content(file_stat *node, int status)
 	file_stat *now = malloc(sizeof(file_stat));
 	now = node;
 
+	if(now == NULL)
+		return ;
+
 	while(1)
 	{
 		now->content = status; // 해당 노드 상태 변경
@@ -184,6 +183,9 @@ int count_nodes(file_stat* head)
 	file_stat *now = malloc(sizeof(file_stat));
 	now = head->down;
 
+	if(now == NULL)
+		return 0;
+
 	while(1){
 		count++;
 		if(now->down != NULL){
@@ -205,6 +207,9 @@ void compare_tree(file_stat *new, file_stat *old)
 {
 	file_stat *now = malloc(sizeof(file_stat));
 	now = old;
+
+	if(new == NULL || old == NULL)
+		return ;
 
 	while(1)
 	{
@@ -253,6 +258,9 @@ int set_list(file_stat *node, int count, int status)
 {
 	file_stat *now = malloc(sizeof(file_stat));
 	now = node;
+
+	if(node == NULL)
+		return count;
 
 	while(1)
 	{
